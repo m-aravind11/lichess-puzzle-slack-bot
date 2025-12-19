@@ -12,7 +12,7 @@ lichess = LichessDailyPuzzle()
 
 @app.get('/')
 async def root():
-    return {"Message": "Hello"}
+    return {"Message": "Welcome to Lichess bot app home"}
 
 @app.post('/submit')
 async def submit_response(submission: Submission) -> bool:
