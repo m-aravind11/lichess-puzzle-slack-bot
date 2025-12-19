@@ -15,8 +15,8 @@ class Constants:
 
 class LichessDailyPuzzle:
     def __init__(self):
-        self.LICHESS_OAUTH_TOKEN = "xoxb-458414646086-10111224817207-uPdYAu7kdTD1tBrFD00yNX7c"
-        self.SLACK_CHANNEL_ID = "C0A4113U1CZ"
+        self.LICHESS_OAUTH_TOKEN = os.environ['LICHESS_OAUTH_TOKEN']
+        self.SLACK_CHANNEL_ID = os.environ['SLACK_CHANNEL_ID']
         
     def get_lichess_daily_puzzle(self) -> dict:
         return requests.get(Constants.LICHESS_DAILY_PUZZLE_URL).json()
