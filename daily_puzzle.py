@@ -48,14 +48,48 @@ class LichessDailyPuzzle:
         board.set_fen(fen)
         return board
 
-    def convert_san_moves_to_uci(self, fen: str, san_moves: list) -> list:
+    def convert_uci_solution_to_san(self, fen: str, uci_moves: list) -> list:
         board = self.get_board_from_fen(fen)
-        uci_moves = []
-        for san in san_moves:
-            move = board.parse_san(san)
-            uci_moves.append(move.uci())
+        san_moves = []
+        for uci in uci_moves:
+            move = chess.Move.from_uci(uci)
+            san_moves.append(board.san(move))
             board.push(move)
-        return uci_moves
+        return san_moves
+
+    def _normalize_san_token(self, token: str) -> str:
+        token = token.strip().replace('*', 'x')
+        lowered = token.lower()
+        if lowered in ('o-o', '0-0'):
+            return 'O-O'
+        if lowered in ('o-o-o', '0-0-0'):
+            return 'O-O-O'
+        token = lowered
+        if token and token[0] in 'kqrbn':
+            token = token[0].upper() + token[1:]
+        return token
+
+    def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
+        """Tolerant of a missing/'*' capture marker, letter case, and check/mate suffixes —
+        e.g. Qe2, Qxe2, Q*e2 and qxe2# all resolve to the same move when legal."""
+        board = self.get_board_from_fen(fen)
+        try:
+            submitted_uci = []
+            for token in submitted_moves:
+                move = board.parse_san(self._normalize_san_token(token))
+                submitted_uci.append(move.uci())
+                board.push(move)
+
+            solution_board = self.get_board_from_fen(fen)
+            solution_uci = []
+            for san in san_solution:
+                move = solution_board.parse_san(san)
+                solution_uci.append(move.uci())
+                solution_board.push(move)
+        except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError):
+            return False
+
+        return submitted_uci == solution_uci
 
     def encode_fen_for_url(self,fen: str) -> str:
         return fen.replace("/", "%2F").replace(" ", "%20")
@@ -70,14 +104,18 @@ class LichessDailyPuzzle:
                 if chunk:
                     f.write(chunk)
 
-    def send_puzzle_to_slack(self,board) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text="🧩 Daily puzzle — {} to play. Reply in this thread with your solution (e.g. Nf3 Nc6 Bb5).".format(
-                    self.whose_move(board).upper()
+                text=(
+                    f"🧩 *Daily Puzzle — {date_str}*\n"
+                    f"{self.whose_move(board).upper()} to play. Reply in this thread with the full sequence of moves "
+                    "that solves it — your moves *and* your opponent's forced replies, in order, separated by spaces.\n"
+                    "Example: `Nf3 Nc6 Bb5`. Standard notation is fine — case, the `x` for captures, and `+`/`#` for "
+                    "check/mate don't need to be exact."
                 ),
             )
             thread_ts = root['ts']
@@ -104,16 +142,19 @@ class LichessDailyPuzzle:
         fen = self.get_fen_from_pgn(pgn)
         encoded_fen = self.encode_fen_for_url(fen)
 
-        filename = Constants.PUZZLE_IMAGE_FILENAME_TEMPLATE.format(datetime.now().strftime("%Y-%m-%d"))
+        today = datetime.now()
+        filename = Constants.PUZZLE_IMAGE_FILENAME_TEMPLATE.format(today.strftime("%Y-%m-%d"))
         self.puzzle_filename = os.path.join(tempfile.gettempdir(), filename)
 
         self.save_puzzle_image(self.get_image_link_from_fen(encoded_fen), self.puzzle_filename)
-        thread_ts = self.send_puzzle_to_slack(self.get_board_from_fen(fen))
+        thread_ts = self.send_puzzle_to_slack(self.get_board_from_fen(fen), today.strftime("%B %d, %Y"))
+
+        san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
 
         db.save_puzzle(
             puzzle_id=daily_puzzle['puzzle']['id'],
-            date=datetime.now().strftime("%Y-%m-%d"),
+            date=today.strftime("%Y-%m-%d"),
             fen=fen,
-            solution=daily_puzzle['puzzle']['solution'],
+            solution=san_solution,
             slack_ts=thread_ts,
         )

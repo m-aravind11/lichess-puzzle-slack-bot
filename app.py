@@ -1,20 +1,23 @@
 import json
 import logging
+import os
 import re
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 
 import db
 from daily_puzzle import LichessDailyPuzzle
+from slack_helpers import dm, get_display_name
 from slack_verify import verify_slack_request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SAN_TOKEN_RE = re.compile(r'^(?:O-O(?:-O)?|[KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](?:=[QRBN])?)[+#]?$', re.IGNORECASE)
+SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=[QRBN])?)[+#]?$', re.IGNORECASE)
+INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
 
 class Submission(BaseModel):
     lichess_puzzle_id: str
@@ -29,7 +32,7 @@ db.init_db()
 
 @app.get('/')
 async def root():
-    return {"Message": "Welcome to Lichess bot app home"}
+    return FileResponse(INDEX_HTML_PATH)
 
 @app.post('/submit')
 async def submit_response(submission: Submission) -> bool:
@@ -42,14 +45,11 @@ async def send_daily_puzzle():
     await lichess.handle_puzzle_generation_and_sending()
     return "Ok"
 
-def _dm(user_id: str, text: str) -> None:
-    try:
-        im = slack_client.conversations_open(users=[user_id])
-        slack_client.chat_postMessage(channel=im['channel']['id'], text=text)
-    except SlackApiError as e:
-        logger.error("Slack DM failed: %s", e.response["error"])
-        logger.error("Full response: %s", e.response.data)
-
+@app.delete('/submissions/{submission_id}')
+async def delete_submission(submission_id: int):
+    if not db.deactivate_submission(submission_id):
+        raise HTTPException(status_code=404, detail="Submission not found or already inactive")
+    return {"ok": True}
 
 @app.post('/slack/events')
 async def slack_events(request: Request):
@@ -58,6 +58,12 @@ async def slack_events(request: Request):
 
     if payload.get('type') == 'url_verification':
         return {"challenge": payload['challenge']}
+
+    if request.headers.get('X-Slack-Retry-Num'):
+        # Slack re-delivering an event we (probably) already handled — e.g. it didn't
+        # get an ack in time. Reprocessing risks the "already answered" DM firing on
+        # what the user experiences as their first and only message.
+        return {"ok": True}
 
     event = payload.get('event', {})
 
@@ -81,20 +87,17 @@ async def slack_events(request: Request):
 
     user_id = event['user']
     if db.has_submitted(puzzle['puzzle_id'], user_id):
-        _dm(user_id, "You've already answered this puzzle.")
+        dm(slack_client, user_id, f"You've already answered <https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle {puzzle['puzzle_id']}>.")
         return {"ok": True}
 
-    try:
-        uci_moves = lichess.convert_san_moves_to_uci(puzzle['fen'], san_moves)
-        correct = uci_moves == puzzle['solution']
-    except (ValueError, IndexError):
-        correct = False
+    correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
 
-    if not db.record_submission(puzzle['puzzle_id'], user_id, event.get('user'), text, correct):
+    if not db.record_submission(puzzle['puzzle_id'], user_id, get_display_name(slack_client, user_id), text, correct):
         return {"ok": True}  # duplicate delivery of the same event, already recorded
 
-    dm_text = "✅ Correct! Well solved." if correct else f"❌ Not quite. Solution: {' '.join(puzzle['solution'])}"
-    _dm(user_id, dm_text)
+    puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle {puzzle['puzzle_id']}>"
+    result_text = "Correct! Well solved." if correct else f"Not quite. Solution: {' '.join(puzzle['solution'])}"
+    dm(slack_client, user_id, f"{puzzle_link}\n{result_text}")
 
     return {"ok": True}
 

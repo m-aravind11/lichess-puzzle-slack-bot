@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 
 import turso_serverless
 
+import migrations
+
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
 
@@ -26,32 +28,7 @@ def _row_to_dict(cursor, row) -> dict:
 
 def init_db() -> None:
     with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS puzzles (
-                puzzle_id TEXT PRIMARY KEY,
-                date TEXT NOT NULL,
-                fen TEXT NOT NULL,
-                solution TEXT NOT NULL,
-                slack_ts TEXT
-            )
-        """)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS submissions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                puzzle_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                user_name TEXT,
-                moves TEXT NOT NULL,
-                correct INTEGER NOT NULL,
-                submitted_at TEXT NOT NULL,
-                UNIQUE(puzzle_id, user_id)
-            )
-        """)
-        cur.execute("PRAGMA table_info(puzzles)")
-        existing_columns = {row[1] for row in cur.fetchall()}  # row[1] is the column name
-        if "slack_ts" not in existing_columns:
-            cur.execute("ALTER TABLE puzzles ADD COLUMN slack_ts TEXT")
+        migrations.run_migrations(conn)
 
 
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
@@ -92,24 +69,35 @@ def has_submitted(puzzle_id: str, user_id: str) -> bool:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT 1 FROM submissions WHERE puzzle_id = ? AND user_id = ?",
+            "SELECT 1 FROM submissions WHERE puzzle_id = ? AND user_id = ? AND active = 1",
             (puzzle_id, user_id),
         )
         return cur.fetchone() is not None
 
 
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool) -> bool:
-    """Returns False if the user already submitted for this puzzle (no-op), True if recorded."""
+    """Returns False if the user already has an active submission for this puzzle (no-op), True if recorded."""
     with get_connection() as conn:
         try:
             conn.cursor().execute(
-                "INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, submitted_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, submitted_at, active) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1)",
                 (puzzle_id, user_id, user_name, moves, int(correct), datetime.now(timezone.utc).isoformat()),
             )
         except turso_serverless.IntegrityError:
             return False
     return True
+
+
+def deactivate_submission(submission_id: int) -> bool:
+    """Soft-deletes a submission by id. Returns True if a row was affected."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1",
+            (submission_id,),
+        )
+        return cur.rowcount > 0
 
 
 def get_leaderboard(limit: int = 10) -> list:
@@ -119,6 +107,7 @@ def get_leaderboard(limit: int = 10) -> list:
             """
             SELECT user_id, MAX(user_name) AS user_name, SUM(correct) AS score
             FROM submissions
+            WHERE active = 1
             GROUP BY user_id
             ORDER BY score DESC
             LIMIT ?
