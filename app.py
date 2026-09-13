@@ -66,7 +66,11 @@ def _finish_submission(puzzle_id: str, user_id: str, text: str, correct: bool, p
     user_name = get_display_name(slack_client, user_id)
 
     if not db.record_submission(puzzle_id, user_id, user_name, text, correct):
-        return  # duplicate delivery of the same submission, already recorded
+        # Either a genuine double-submit race or Slack retrying the same delivery -
+        # either way, silently dropping it would leave the user with no idea what
+        # happened to their second attempt.
+        dm(slack_client, user_id, "That answer wasn't recorded - you've already submitted for this puzzle.")
+        return
 
     dm(slack_client, user_id, format_result_dm(puzzle, text, correct))
 
