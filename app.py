@@ -4,7 +4,7 @@ import os
 import re
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from slack_sdk import WebClient
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=[QRBN])?)[+#]?$', re.IGNORECASE)
 INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
+CRON_SECRET = os.environ.get('CRON_SECRET')
 
 class Submission(BaseModel):
     lichess_puzzle_id: str
@@ -44,13 +45,20 @@ async def submit_response(submission: Submission) -> bool:
 @app.post('/send_puzzle')
 async def send_daily_puzzle():
     await lichess.handle_puzzle_generation_and_sending()
-    return "Ok"
+    return Response(status_code=200)
+
+@app.get('/cron/send-puzzle')
+async def cron_send_puzzle(request: Request):
+    if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    await lichess.handle_puzzle_generation_and_sending()
+    return Response(status_code=200)
 
 @app.delete('/submissions/{submission_id}')
 async def delete_submission(submission_id: int):
     if not db.deactivate_submission(submission_id):
         raise HTTPException(status_code=404, detail="Submission not found or already inactive")
-    return {"ok": True}
+    return Response(status_code=200)
 
 @app.post('/slack/events')
 async def slack_events(request: Request):
@@ -64,27 +72,27 @@ async def slack_events(request: Request):
         # Slack re-delivering an event we (probably) already handled - e.g. it didn't
         # get an ack in time. Reprocessing risks the "already answered" DM firing on
         # what the user experiences as their first and only message.
-        return {"ok": True}
+        return Response(status_code=200)
 
     event = payload.get('event', {})
 
     # Ignore anything that isn't a plain thread reply from a real user
     # (bot's own puzzle post has bot_id/subtype set, and has no thread_ts of its own).
     if event.get('type') != 'message' or event.get('bot_id') or event.get('subtype'):
-        return {"ok": True}
+        return Response(status_code=200)
 
     thread_ts = event.get('thread_ts')
     if not thread_ts or thread_ts == event.get('ts'):
-        return {"ok": True}
+        return Response(status_code=200)
 
     text = event.get('text', '').strip()
     san_moves = text.split()
     if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
-        return {"ok": True}  # not move-like - leave normal thread chatter alone
+        return Response(status_code=200)  # not move-like - leave normal thread chatter alone
 
     puzzle = db.get_puzzle_by_slack_ts(thread_ts)
     if puzzle is None:
-        return {"ok": True}
+        return Response(status_code=200)
 
     user_id = event['user']
     puzzle_date = datetime.strptime(puzzle['date'], '%Y-%m-%d').strftime('%B %d, %Y')
@@ -92,12 +100,12 @@ async def slack_events(request: Request):
 
     if db.has_submitted(puzzle['puzzle_id'], user_id):
         dm(slack_client, user_id, f"You've already submitted an answer for {puzzle_link} - only your first attempt counts.")
-        return {"ok": True}
+        return Response(status_code=200)
 
     correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
 
     if not db.record_submission(puzzle['puzzle_id'], user_id, get_display_name(slack_client, user_id), text, correct):
-        return {"ok": True}  # duplicate delivery of the same event, already recorded
+        return Response(status_code=200)  # duplicate delivery of the same event, already recorded
 
     result_text = (
         "That's correct - nice work!" if correct
@@ -105,7 +113,7 @@ async def slack_events(request: Request):
     )
     dm(slack_client, user_id, f"{puzzle_link}\nYou answered: `{text}`\n{result_text}")
 
-    return {"ok": True}
+    return Response(status_code=200)
 
 @app.post('/slack/leaderboard')
 async def leaderboard_command(request: Request):

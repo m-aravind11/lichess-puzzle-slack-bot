@@ -1,0 +1,8 @@
+{
+    "crons": [
+        {
+            "path": "/cron/send-puzzle",
+            "schedule": "30 12 * * *"
+        }
+    ]
+}
