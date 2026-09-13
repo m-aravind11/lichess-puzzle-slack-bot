@@ -95,10 +95,15 @@ def run_migrations(conn) -> None:
         )
     """)
 
+    # One round trip for every already-applied migration, not one per migration -
+    # each round trip to Turso is a fresh HTTPS/TLS handshake (no connection
+    # pooling at that layer), and this runs on every cold start.
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM schema_migrations")
+    applied = {row[0] for row in cur.fetchall()}
+
     for name, migrate in MIGRATIONS:
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM schema_migrations WHERE name = ?", (name,))
-        if cur.fetchone() is not None:
+        if name in applied:
             continue
 
         logger.info("Applying migration: %s", name)

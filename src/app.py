@@ -1,6 +1,5 @@
 import json
 import logging
-import time
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -15,15 +14,10 @@ from slack_helpers import format_leaderboard, get_display_names
 from slack_verify import verify_slack_request
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-logger = logging.getLogger(__name__)
 
 app = FastAPI()
 lichess = LichessDailyPuzzle()
 slack_client = WebClient(token=lichess.LICHESS_OAUTH_TOKEN)
-
-_t_init = time.monotonic()
-db.init_db()
-logger.info("[timing] cold-start db.init_db(): %.3fs", time.monotonic() - _t_init)
 
 @app.get('/')
 async def root():
@@ -34,6 +28,13 @@ async def cron_send_puzzle(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
         raise HTTPException(status_code=401, detail="Unauthorized")
     await lichess.handle_puzzle_generation_and_sending()
+    return Response(status_code=200)
+
+@app.post('/admin/migrate')
+async def run_migrations(request: Request):
+    if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    db.init_db()
     return Response(status_code=200)
 
 @app.delete('/submissions/{submission_id}')

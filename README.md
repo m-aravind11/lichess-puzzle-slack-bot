@@ -46,7 +46,20 @@ serverless functions have a read-only filesystem outside `/tmp`, and `/tmp`
 doesn't persist between invocations.
 
 Migrations are idempotent functions in `src/migrations.py`, tracked by name in
-a `schema_migrations` table, and run automatically by `db.init_db()`.
+a `schema_migrations` table.
+
+## Migrations
+
+Not run automatically on app startup - the check alone (one round trip to
+Turso per already-applied migration) added seconds to every cold-start
+request when it lived in the request path. Trigger it yourself after
+deploying a change to `migrations.py`, gated by `CRON_SECRET` like the cron
+endpoint:
+
+```
+curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrate \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
 
 ## Environment variables
 
@@ -74,6 +87,7 @@ in your host in the two URLs, and reinstall the app. It sets:
 |---|---|
 | `GET /` | Status page |
 | `GET /cron/send-puzzle` | Fetches and posts the daily puzzle, gated by `CRON_SECRET` - what Vercel's cron actually hits (see `vercel.json`) |
+| `POST /admin/migrate` | Applies pending migrations, gated by `CRON_SECRET` - trigger manually after deploying a schema change |
 | `POST /slack/interactions` | Opens the answer modal, handles its submission |
 | `POST /slack/leaderboard` | Slash command - posts the leaderboard |
 | `DELETE /submissions/{id}` | Soft-deletes a submission by id |
