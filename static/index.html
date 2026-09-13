@@ -6,19 +6,33 @@
 <title>Lichess Puzzle Bot</title>
 <style>
   :root {
-    --bg: #f7f7f5;
-    --fg: #1b1b1b;
-    --muted: #6b6b6b;
-    --border: #e2e2e0;
-    --accent: #3c6e47;
+    --bg: #f3f1ea;
+    --surface: #ffffff;
+    --surface-2: #ecf3ee;
+    --fg: #1c1c1a;
+    --muted: #656356;
+    --border: #ddd8c8;
+    --accent: #2f6b4f;
+    --accent-strong: #1f4d38;
+    --accent-soft: #dfeee5;
+    --square-a: #f3efe0;
+    --square-b: #2f6b4f;
+    --shadow: 0 1px 2px rgba(30, 25, 10, 0.05), 0 10px 28px rgba(30, 25, 10, 0.08);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #151514;
-      --fg: #eaeae8;
-      --muted: #9a9a97;
-      --border: #2c2c2a;
-      --accent: #7fb98a;
+      --bg: #121210;
+      --surface: #1e1d17;
+      --surface-2: #172019;
+      --fg: #f1eee2;
+      --muted: #a6a394;
+      --border: #38352a;
+      --accent: #6fc290;
+      --accent-strong: #8fd6ac;
+      --accent-soft: #1c2c22;
+      --square-a: #2a2818;
+      --square-b: #3f7a58;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.4);
     }
   }
   * { box-sizing: border-box; }
@@ -27,66 +41,261 @@
     background: var(--bg);
     color: var(--fg);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    display: flex;
-    min-height: 100vh;
-    align-items: center;
-    justify-content: center;
-    padding: 24px;
+    padding: 44px 20px 60px;
   }
   main {
-    max-width: 480px;
-    width: 100%;
+    max-width: 620px;
+    margin: 0 auto;
+  }
+
+  /* ---- hero ---- */
+  .hero {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    padding: 28px 28px 26px;
+    margin-bottom: 36px;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 50%, var(--accent) 100%);
+  }
+  .hero-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+  .board-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 11px;
+    flex-shrink: 0;
+    background-color: var(--square-a);
+    background-image:
+      linear-gradient(45deg, var(--square-b) 25%, transparent 25%, transparent 75%, var(--square-b) 75%),
+      linear-gradient(45deg, var(--square-b) 25%, transparent 25%, transparent 75%, var(--square-b) 75%);
+    background-size: 23px 23px;
+    background-position: 0 0, 11.5px 11.5px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
   }
   h1 {
-    font-size: 1.4rem;
-    margin: 0 0 4px;
+    font-size: 1.55rem;
+    margin: 0;
+    letter-spacing: -0.01em;
   }
   .status {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.85rem;
-    color: var(--muted);
-    margin-bottom: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+    padding: 3px 10px 3px 8px;
+    border-radius: 999px;
+    margin-top: 6px;
   }
   .dot {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: var(--accent);
   }
-  p {
-    line-height: 1.5;
+  .tagline {
     color: var(--muted);
-    margin: 0 0 12px;
-  }
-  code {
-    background: var(--border);
-    padding: 1px 5px;
-    border-radius: 4px;
-    font-size: 0.9em;
-  }
-  ul {
-    padding-left: 20px;
+    line-height: 1.6;
     margin: 0;
-    color: var(--muted);
+    font-size: 1rem;
   }
-  li { margin-bottom: 6px; }
-  a { color: var(--accent); }
+  .tagline a { color: var(--accent-strong); text-decoration: none; border-bottom: 1px solid currentColor; }
+
+  /* ---- section headers ---- */
+  h2.eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+
+  /* ---- steps ---- */
+  .steps {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 36px;
+  }
+  .step {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--surface);
+    font-size: 0.74rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step p {
+    margin: 0;
+    line-height: 1.55;
+    font-size: 0.95rem;
+    color: var(--fg);
+  }
+  .step p code {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 0.88em;
+  }
+
+  /* ---- mock conversation ---- */
+  .thread {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
+  }
+  .msg {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 14px;
+  }
+  .msg:last-child { margin-bottom: 0; }
+  .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    color: #fff;
+    box-shadow: var(--shadow);
+  }
+  .avatar.bot { background: var(--accent); }
+  .avatar.user { background: #7a8ca8; }
+  .bubble {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 9px 13px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    box-shadow: var(--shadow);
+  }
+  .bubble .who {
+    font-weight: 700;
+    font-size: 0.78rem;
+    color: var(--accent-strong);
+    margin-bottom: 2px;
+  }
+  .bubble code {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    padding: 1px 6px;
+    border-radius: 5px;
+    font-size: 0.92em;
+  }
+
+  footer {
+    color: var(--muted);
+    font-size: 0.85rem;
+    text-align: center;
+    padding-top: 20px;
+  }
+
+  @media (max-width: 420px) {
+    body { padding: 28px 14px 48px; }
+    .hero { padding: 22px 20px 20px; }
+    .board-icon { width: 40px; height: 40px; }
+    h1 { font-size: 1.35rem; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <h1>Lichess Puzzle Bot</h1>
-  <div class="status"><span class="dot"></span> Running</div>
-  <p>Posts the <a href="https://lichess.org/training/daily">Lichess daily puzzle</a>
-  to Slack, verifies thread replies against the solution, and tracks a leaderboard.</p>
-  <p>This is a backend service, not a page meant to be used directly. Interact with
-  it through Slack:</p>
-  <ul>
-    <li>Reply to a puzzle thread with your answer, e.g. <code>Nf3 Nc6 Bb5</code></li>
-    <li><code>/leaderboard</code> to see current standings</li>
-  </ul>
+  <div class="hero">
+    <div class="hero-top">
+      <div class="board-icon" aria-hidden="true"></div>
+      <div>
+        <h1>Lichess Puzzle Bot</h1>
+        <div class="status"><span class="dot"></span> Running</div>
+      </div>
+    </div>
+    <p class="tagline">
+      Posts the <a href="https://lichess.org/training/daily">Lichess daily puzzle</a> to Slack every day,
+      checks thread replies against the solution, and keeps a running leaderboard of who's solving them.
+    </p>
+  </div>
+
+  <h2 class="eyebrow">How it works</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <p>The daily puzzle is posted to the channel as a new thread, with the position shown as an image.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <p>Reply in that thread with the full line, e.g. <code>Nf3 Nc6 Bb5</code> - your moves and your opponent's forced replies, in order.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <p>You get a DM with the result. Run <code>/leaderboard</code> anywhere in the workspace to see current standings.</p>
+    </div>
+  </div>
+
+  <h2 class="eyebrow">What it looks like</h2>
+  <div class="thread">
+    <div class="msg">
+      <div class="avatar bot">&#9822;</div>
+      <div class="bubble">
+        <div class="who">Puzzle Bot</div>
+        White to play - find the winning line. Reply here with every move.
+      </div>
+    </div>
+    <div class="msg">
+      <div class="avatar user">A</div>
+      <div class="bubble"><code>Qxf7#</code></div>
+    </div>
+    <div class="msg">
+      <div class="avatar bot">&#9822;</div>
+      <div class="bubble">
+        <div class="who">Puzzle Bot &middot; DM</div>
+        You answered: <code>Qxf7#</code><br>That's correct - nice work!
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    This is a backend service - there's nothing else to do here. Interact with it from Slack.
+  </footer>
 </main>
 </body>
 </html>
