@@ -7,22 +7,12 @@
     "features": {
         "bot_user": {
             "display_name": "Lichess Puzzle Bot"
-        },
-        "slash_commands": [
-            {
-                "command": "/leaderboard",
-                "url": "https://lichess-puzzle-slack-bot.vercel.app/slack/leaderboard",
-                "description": "Display scores of participants",
-                "usage_hint": "show leaderboard",
-                "should_escape": false
-            }
-        ]
+        }
     },
     "oauth_config": {
         "scopes": {
             "bot": [
                 "chat:write",
-                "commands",
                 "im:write",
                 "users:read"
             ]

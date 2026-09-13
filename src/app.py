@@ -59,13 +59,18 @@ async def slack_interactions(request: Request):
 
     return Response(status_code=200)
 
-@app.post('/slack/leaderboard')
-async def leaderboard_command(request: Request):
-    await verify_slack_request(request)
-    board = db.get_leaderboard()
+@app.get('/cron/send-leaderboard')
+async def cron_send_leaderboard(request: Request):
+    if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
+    board = db.get_leaderboard()
     if not board:
-        return {"response_type": "ephemeral", "text": "No submissions yet."}
+        return Response(status_code=200)
 
     names = get_display_names(slack_client)
-    return {"response_type": "in_channel", "text": format_leaderboard(board, names)}
+    slack_client.chat_postMessage(
+        channel=lichess.SLACK_CHANNEL_ID,
+        text=format_leaderboard(board, names),
+    )
+    return Response(status_code=200)

@@ -1,6 +1,10 @@
 {
     "crons": [
         {
+            "path": "/cron/send-leaderboard",
+            "schedule": "0 11 * * *"
+        },
+        {
             "path": "/cron/send-puzzle",
             "schedule": "30 11 * * *"
         }
