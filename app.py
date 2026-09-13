@@ -59,13 +59,6 @@ async def delete_submission(submission_id: int):
         raise HTTPException(status_code=404, detail="Submission not found or already inactive")
     return Response(status_code=200)
 
-@app.get('/puzzle-image/{puzzle_id}')
-async def puzzle_image(puzzle_id: str, fen: str, w: int = 360):
-    # puzzle_id isn't used for a lookup - it's just in the path so each puzzle gets its
-    # own URL. Taking fen directly avoids depending on the puzzle already being saved,
-    # since this gets fetched by Slack while validating the very message that saves it.
-    return Response(content=lichess.get_resized_puzzle_image(fen, w), media_type="image/png")
-
 @app.post('/slack/interactions')
 async def slack_interactions(request: Request):
     body = await verify_slack_request(request)

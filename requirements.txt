@@ -6,7 +6,6 @@ charset-normalizer==3.4.4
 chess==1.11.2
 fastapi==0.125.0
 idna==3.11
-pillow==12.3.0
 pydantic==2.12.5
 pydantic_core==2.41.5
 requests==2.32.5
