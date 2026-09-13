@@ -2,7 +2,7 @@
     "crons": [
         {
             "path": "/cron/send-puzzle",
-            "schedule": "30 12 * * *"
+            "schedule": "30 11 * * *"
         }
     ]
 }
