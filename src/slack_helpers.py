@@ -40,7 +40,15 @@ def format_seconds(seconds: float | None) -> str:
     if seconds is None or seconds < 0:
         return "-"
     total = int(seconds)
-    return f"{total // 60}:{total % 60:02d}"
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if hours or minutes:
+        parts.append(f"{minutes}m")
+    parts.append(f"{secs}s")
+    return " ".join(parts)
 
 
 def format_result_dm(puzzle: dict, submitted_text: str, correct: bool) -> str:

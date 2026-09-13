@@ -62,6 +62,14 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     if puzzle is None:
         return {"response_action": "errors", "errors": {MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
 
+    latest_puzzle = db.get_latest_puzzle()
+    log_timing("get_latest_puzzle")
+    if latest_puzzle['puzzle_id'] != puzzle_id:
+        return {
+            "response_action": "errors",
+            "errors": {MOVES_BLOCK_ID: "A new puzzle has been posted - this one is no longer accepting answers."},
+        }
+
     correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
     log_timing("check_answer")
 
