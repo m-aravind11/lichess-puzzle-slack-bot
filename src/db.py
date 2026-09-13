@@ -10,8 +10,8 @@ import turso_serverless
 import migrations
 import queries
 
-TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
-TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
+TURSO_DATABASE_URL = os.environ['VERCEL_TURSO_TURSO_DATABASE_URL']
+TURSO_AUTH_TOKEN = os.environ['VERCEL_TURSO_TURSO_AUTH_TOKEN']
 
 # DB Connection pool
 _pool: "queue.Queue" = queue.Queue()
