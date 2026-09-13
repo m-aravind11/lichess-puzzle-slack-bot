@@ -7,11 +7,9 @@ SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-
 INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
 CRON_SECRET = os.environ.get('CRON_SECRET')
 
-# Chessvision's board images have no size parameter and Slack renders "image" blocks
-# close to full device width regardless of source size, so a full-size board inside
-# the answer modal pushes the input field off-screen. PUBLIC_BASE_URL lets us proxy
-# and resize the image ourselves (see GET /puzzle-image/{puzzle_id} in app.py) -
-# override it for local dev (e.g. an ngrok URL), since Slack needs to fetch it.
+# Chessvision's board images have no size parameter, so PUBLIC_BASE_URL lets us proxy
+# and resize the image ourselves for the channel post (see GET /puzzle-image/{puzzle_id}
+# in app.py) - override it for local dev (e.g. an ngrok URL), since Slack needs to fetch it.
 PUBLIC_BASE_URL = os.environ.get('PUBLIC_BASE_URL', 'https://lichess-puzzle-slack-bot.vercel.app')
 
 # Answer-submission modal: a button on the puzzle post opens this privately, so
