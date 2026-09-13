@@ -7,6 +7,8 @@ import chess.pgn
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+import db
+
 class Constants:
     LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
     LICHESS_PUZZLE_SOLUTION_URL = "https://lichess.org/api/puzzle/"
@@ -41,7 +43,16 @@ class LichessDailyPuzzle:
         board = chess.Board()
         board.set_fen(fen)
         return board
-    
+
+    def convert_san_moves_to_uci(self, fen: str, san_moves: list) -> list:
+        board = self.get_board_from_fen(fen)
+        uci_moves = []
+        for san in san_moves:
+            move = board.parse_san(san)
+            uci_moves.append(move.uci())
+            board.push(move)
+        return uci_moves
+
     def encode_fen_for_url(self,fen: str) -> str:
         return fen.replace("/", "%2F").replace(" ", "%20")
 
@@ -73,7 +84,8 @@ class LichessDailyPuzzle:
             print(f"Got an error: {e.response['error']}")
 
     async def handle_puzzle_generation_and_sending(self) -> None:
-        pgn = self.get_pgn_from_daily_puzzle(self.get_lichess_daily_puzzle())
+        daily_puzzle = self.get_lichess_daily_puzzle()
+        pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
         fen = self.get_fen_from_pgn(pgn)
         encoded_fen = self.encode_fen_for_url(fen)
 
@@ -81,3 +93,10 @@ class LichessDailyPuzzle:
 
         self.save_puzzle_image(self.get_image_link_from_fen(encoded_fen), self.puzzle_filename)
         self.send_puzzle_to_slack(self.get_board_from_fen(fen))
+
+        db.save_puzzle(
+            puzzle_id=daily_puzzle['puzzle']['id'],
+            date=datetime.now().strftime("%Y-%m-%d"),
+            fen=fen,
+            solution=daily_puzzle['puzzle']['solution'],
+        )
