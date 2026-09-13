@@ -80,12 +80,25 @@ def get_latest_puzzle() -> dict | None:
         return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
 
 
+# Puzzle rows are only ever inserted, never updated (see queries.py) - once
+# fetched, a puzzle_id's data can't go stale, so it's safe to cache for the
+# life of the process instead of round-tripping to Turso on every submission.
+_puzzle_cache: dict = {}
+
+
 def get_puzzle(puzzle_id: str) -> dict | None:
+    if puzzle_id in _puzzle_cache:
+        return _puzzle_cache[puzzle_id]
+
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(queries.GET_PUZZLE_BY_ID, (puzzle_id,))
         row = cur.fetchone()
-        return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
+        puzzle = _row_to_puzzle(_row_to_dict(cur, row)) if row else None
+
+    if puzzle is not None:
+        _puzzle_cache[puzzle_id] = puzzle
+    return puzzle
 
 
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool) -> bool:
