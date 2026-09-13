@@ -67,23 +67,36 @@ async def slack_interactions(request: Request):
     if payload.get('type') == 'block_actions':
         action = payload['actions'][0]
         if action.get('action_id') == ACTION_OPEN_ANSWER_MODAL:
+            puzzle_id = action['value']
+            puzzle = db.get_puzzle(puzzle_id)
+
+            blocks = []
+            if puzzle is not None:
+                image_link = lichess.get_image_link_from_fen(lichess.encode_fen_for_url(puzzle['fen']))
+                blocks.append({"type": "image", "image_url": image_link, "alt_text": "Puzzle position"})
+            blocks.append(
+                {
+                    "type": "input",
+                    "block_id": MOVES_BLOCK_ID,
+                    "label": {"type": "plain_text", "text": "Your line (yours and your opponent's moves, in order)"},
+                    "element": {
+                        "type": "plain_text_input",
+                        "action_id": MOVES_ACTION_ID,
+                        "placeholder": {"type": "plain_text", "text": "Nf3 Nc6 Bb5"},
+                    },
+                }
+            )
+
             slack_client.views_open(
                 trigger_id=payload['trigger_id'],
                 view={
                     "type": "modal",
                     "callback_id": ANSWER_MODAL_CALLBACK_ID,
-                    "private_metadata": action['value'],  # puzzle_id
+                    "private_metadata": puzzle_id,
                     "title": {"type": "plain_text", "text": "Submit answer"},
                     "submit": {"type": "plain_text", "text": "Submit"},
                     "close": {"type": "plain_text", "text": "Cancel"},
-                    "blocks": [
-                        {
-                            "type": "input",
-                            "block_id": MOVES_BLOCK_ID,
-                            "label": {"type": "plain_text", "text": "Your line, e.g. Nf3 Nc6 Bb5"},
-                            "element": {"type": "plain_text_input", "action_id": MOVES_ACTION_ID},
-                        }
-                    ],
+                    "blocks": blocks,
                 },
             )
         return Response(status_code=200)

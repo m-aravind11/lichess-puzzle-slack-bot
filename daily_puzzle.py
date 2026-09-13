@@ -108,12 +108,7 @@ class LichessDailyPuzzle:
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": (
-                                f"*Daily Puzzle - {date_str}*\n"
-                                f"{self.whose_move(board).upper()} to play - find the winning line.\n"
-                                "Tap *Submit Answer* and enter your line privately (yours *and* your "
-                                "opponent's moves, in order, e.g. `Nf3 Nc6 Bb5`)."
-                            ),
+                            "text": f"*Daily Puzzle - {date_str}*\n{self.whose_move(board).upper()} to play. Click *Submit Answer* to submit.",
                         },
                     },
                     {
