@@ -10,6 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
+from constants import ACTION_OPEN_ANSWER_MODAL
 
 logger = logging.getLogger(__name__)
 
@@ -104,18 +105,38 @@ class LichessDailyPuzzle:
                 if chunk:
                     f.write(chunk)
 
-    def send_puzzle_to_slack(self,board,date_str: str) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text=(
-                    f"*Daily Puzzle - {date_str}*\n"
-                    f"{self.whose_move(board).upper()} to play - find the winning line.\n"
-                    "Reply here with every move (yours *and* your opponent's), in order, e.g. `Nf3 Nc6 Bb5`.\n"
-                    "You'll get a DM telling you if you got it right."
-                ),
+                text=f"*Daily Puzzle - {date_str}* - {self.whose_move(board).upper()} to play.",
+                blocks=[
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": (
+                                f"*Daily Puzzle - {date_str}*\n"
+                                f"{self.whose_move(board).upper()} to play - find the winning line.\n"
+                                "Tap *Submit Answer* and enter your line privately (yours *and* your "
+                                "opponent's moves, in order, e.g. `Nf3 Nc6 Bb5`)."
+                            ),
+                        },
+                    },
+                    {
+                        "type": "actions",
+                        "elements": [
+                            {
+                                "type": "button",
+                                "action_id": ACTION_OPEN_ANSWER_MODAL,
+                                "text": {"type": "plain_text", "text": "Submit Answer"},
+                                "value": puzzle_id,
+                            }
+                        ],
+                    },
+                ],
             )
             thread_ts = root['ts']
 
@@ -146,7 +167,9 @@ class LichessDailyPuzzle:
         self.puzzle_filename = os.path.join(tempfile.gettempdir(), filename)
 
         self.save_puzzle_image(self.get_image_link_from_fen(encoded_fen), self.puzzle_filename)
-        thread_ts = self.send_puzzle_to_slack(self.get_board_from_fen(fen), today.strftime("%B %d, %Y"))
+        thread_ts = self.send_puzzle_to_slack(
+            self.get_board_from_fen(fen), today.strftime("%B %d, %Y"), daily_puzzle['puzzle']['id']
+        )
 
         san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
 

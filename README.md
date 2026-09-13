@@ -1,18 +1,22 @@
 # Lichess Puzzle Slack Bot
 
-Posts the Lichess daily puzzle to a Slack channel, lets people answer by replying in
-the thread, DMs each person whether they got it right, and tracks a leaderboard.
+Posts the Lichess daily puzzle to a Slack channel, lets people answer privately via a
+button-triggered modal (so answers never appear in the thread for others to copy),
+DMs each person whether they got it right, and tracks a leaderboard.
 
 ## How it works
 
 1. A cron (or a manual `POST /send_puzzle`) fetches the day's puzzle from Lichess,
    renders the position as an image, and posts it to a Slack channel as a message
-   thread. The FEN and solution (converted to SAN) are stored against that thread's
-   `ts` in the database.
-2. People reply in the thread with their answer, e.g. `Nf3 Nc6 Bb5`. Slack delivers
-   that as an Events API callback to `POST /slack/events`. The handler looks up the
-   puzzle by thread `ts`, checks the reply hasn't already been answered, verifies the
-   moves against the solution, records the submission, and DMs the result.
+   thread with a "Submit Answer" button. The FEN and solution (converted to SAN) are
+   stored against that thread's `ts` in the database, keyed by the puzzle's id.
+2. Clicking the button opens a modal (`POST /slack/interactions`, Slack's
+   `block_actions` payload) with a single text input. Submitting it (a
+   `view_submission` payload on the same endpoint) looks up the puzzle by id, checks
+   the user hasn't already answered, verifies the moves against the solution, records
+   the submission, and DMs the result. A correct answer also gets a short public
+   "solved it in M:SS" message posted to the puzzle's thread - visible for
+   encouragement, without ever revealing the moves.
 3. `/leaderboard` (a Slack slash command) posts the current standings to the channel.
 
 Move verification (`LichessDailyPuzzle.check_answer` in `daily_puzzle.py`) parses
@@ -25,11 +29,13 @@ capture markers, and letter case don't have to match exactly.
 
 | File | Responsibility |
 |---|---|
-| `app.py` | FastAPI routes: puzzle trigger, Slack events, leaderboard command |
+| `app.py` | FastAPI routes: puzzle trigger, Slack interactivity, leaderboard command |
 | `daily_puzzle.py` | Talks to the Lichess API and Slack, chess move parsing/verification |
 | `db.py` | Query layer (Turso/libSQL) |
+| `queries.py` | Raw SQL used by `db.py` |
 | `migrations.py` | Schema migrations, tracked in a `schema_migrations` table |
-| `slack_helpers.py` | Slack API helpers shared across routes (DM, display name lookup) |
+| `constants.py` | Shared constants and request models (SAN regex, modal/action ids, `Submission`) |
+| `slack_helpers.py` | Slack API helpers shared across routes (DM, display name lookup, message formatting) |
 | `slack_verify.py` | Verifies Slack request signatures |
 
 ## Storage
@@ -50,7 +56,7 @@ separate migration step or tool required.
 |---|---|
 | `LICHESS_OAUTH_TOKEN` | Slack bot token (historical name - this is not a Lichess credential, it's passed straight to `slack_sdk.WebClient`) |
 | `SLACK_CHANNEL_ID` | Channel the daily puzzle is posted to |
-| `SLACK_SIGNING_SECRET` | Verifies incoming Slack requests (events + slash commands) |
+| `SLACK_SIGNING_SECRET` | Verifies incoming Slack requests (interactions + slash commands) |
 | `TURSO_DATABASE_URL` | e.g. `libsql://<db>-<org>.turso.io` |
 | `TURSO_AUTH_TOKEN` | Turso auth token |
 
@@ -58,14 +64,11 @@ separate migration step or tool required.
 
 The bot needs:
 
-- **Bot token scopes**: `channels:history` (or `groups:history` for a private
-  channel), `chat:write`, `commands`, `files:write`, `im:write`, `users:read`.
-- **Event Subscriptions**: Request URL `https://<host>/slack/events`, subscribed to
-  the bot event `message.channels` (or `message.groups` for a private channel).
+- **Bot token scopes**: `chat:write`, `commands`, `files:write`, `im:write`, `users:read`.
+- **Interactivity & Shortcuts**: enabled, Request URL `https://<host>/slack/interactions`
+  - this is what powers the "Submit Answer" button and its modal.
 - **Slash commands**: `/leaderboard` → `https://<host>/slack/leaderboard`.
-
-Slash commands are rejected by Slack inside a thread reply - that's why answering a
-puzzle is a plain thread reply handled through the Events API instead of a command.
+- **Event Subscriptions**: not used - no bot events are subscribed to.
 
 ## Endpoints
 
@@ -73,7 +76,7 @@ puzzle is a plain thread reply handled through the Events API instead of a comma
 |---|---|
 | `GET /` | Status page |
 | `POST /send_puzzle` | Fetches and posts the daily puzzle (call this from a scheduler) |
-| `POST /slack/events` | Slack Events API callback - puzzle answers |
+| `POST /slack/interactions` | Slack Interactivity callback - opens the answer modal and handles its submission |
 | `POST /slack/leaderboard` | Slack slash command - posts the leaderboard |
 | `POST /submit` | Older, standalone endpoint: verifies `moves` against a given `lichess_puzzle_id` directly against the Lichess API. Not used by the Slack flow. |
 
@@ -89,6 +92,6 @@ export TURSO_AUTH_TOKEN=...
 uvicorn app:app --reload
 ```
 
-Slack needs a public HTTPS URL to reach `/slack/events` and `/slack/leaderboard` -
+Slack needs a public HTTPS URL to reach `/slack/interactions` and `/slack/leaderboard` -
 use a tunnel (e.g. `ngrok http 8000`) during local development and update the Slack
 app's Request URLs to match.

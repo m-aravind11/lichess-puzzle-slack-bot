@@ -1,30 +1,29 @@
 import json
 import logging
-import os
-import re
-from datetime import datetime
+from datetime import datetime, timezone
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 from slack_sdk import WebClient
 
 import db
+from constants import (
+    ACTION_OPEN_ANSWER_MODAL,
+    ANSWER_MODAL_CALLBACK_ID,
+    CRON_SECRET,
+    INDEX_HTML_PATH,
+    MOVES_ACTION_ID,
+    MOVES_BLOCK_ID,
+    SAN_TOKEN_RE,
+    Submission,
+)
 from daily_puzzle import LichessDailyPuzzle
-from slack_helpers import dm, get_display_name
+from slack_helpers import dm, format_leaderboard, format_result_dm, format_seconds, get_display_name
 from slack_verify import verify_slack_request
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=[QRBN])?)[+#]?$', re.IGNORECASE)
-INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
-CRON_SECRET = os.environ.get('CRON_SECRET')
-
-class Submission(BaseModel):
-    lichess_puzzle_id: str
-    user_id: str
-    moves: str
 
 app = FastAPI()
 lichess = LichessDailyPuzzle()
@@ -60,58 +59,75 @@ async def delete_submission(submission_id: int):
         raise HTTPException(status_code=404, detail="Submission not found or already inactive")
     return Response(status_code=200)
 
-@app.post('/slack/events')
-async def slack_events(request: Request):
+@app.post('/slack/interactions')
+async def slack_interactions(request: Request):
     body = await verify_slack_request(request)
-    payload = json.loads(body)
+    payload = json.loads(parse_qs(body.decode())['payload'][0])
 
-    if payload.get('type') == 'url_verification':
-        return {"challenge": payload['challenge']}
-
-    if request.headers.get('X-Slack-Retry-Num'):
-        # Slack re-delivering an event we (probably) already handled - e.g. it didn't
-        # get an ack in time. Reprocessing risks the "already answered" DM firing on
-        # what the user experiences as their first and only message.
+    if payload.get('type') == 'block_actions':
+        action = payload['actions'][0]
+        if action.get('action_id') == ACTION_OPEN_ANSWER_MODAL:
+            slack_client.views_open(
+                trigger_id=payload['trigger_id'],
+                view={
+                    "type": "modal",
+                    "callback_id": ANSWER_MODAL_CALLBACK_ID,
+                    "private_metadata": action['value'],  # puzzle_id
+                    "title": {"type": "plain_text", "text": "Submit answer"},
+                    "submit": {"type": "plain_text", "text": "Submit"},
+                    "close": {"type": "plain_text", "text": "Cancel"},
+                    "blocks": [
+                        {
+                            "type": "input",
+                            "block_id": MOVES_BLOCK_ID,
+                            "label": {"type": "plain_text", "text": "Your line, e.g. Nf3 Nc6 Bb5"},
+                            "element": {"type": "plain_text_input", "action_id": MOVES_ACTION_ID},
+                        }
+                    ],
+                },
+            )
         return Response(status_code=200)
 
-    event = payload.get('event', {})
+    if payload.get('type') == 'view_submission' and payload['view'].get('callback_id') == ANSWER_MODAL_CALLBACK_ID:
+        puzzle_id = payload['view']['private_metadata']
+        user_id = payload['user']['id']
+        text = payload['view']['state']['values'][MOVES_BLOCK_ID][MOVES_ACTION_ID]['value'].strip()
+        san_moves = text.split()
 
-    # Ignore anything that isn't a plain thread reply from a real user
-    # (bot's own puzzle post has bot_id/subtype set, and has no thread_ts of its own).
-    if event.get('type') != 'message' or event.get('bot_id') or event.get('subtype'):
+        if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
+            return {
+                "response_action": "errors",
+                "errors": {MOVES_BLOCK_ID: "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"},
+            }
+
+        puzzle = db.get_puzzle(puzzle_id)
+        if puzzle is None:
+            return {"response_action": "errors", "errors": {MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
+
+        if db.has_submitted(puzzle_id, user_id):
+            return {
+                "response_action": "errors",
+                "errors": {MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
+            }
+
+        correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
+        user_name = get_display_name(slack_client, user_id)
+
+        if not db.record_submission(puzzle_id, user_id, user_name, text, correct):
+            return Response(status_code=200)  # duplicate delivery of the same submission, already recorded
+
+        dm(slack_client, user_id, format_result_dm(puzzle, text, correct))
+
+        if correct and puzzle['slack_ts']:
+            posted_at = datetime.fromtimestamp(float(puzzle['slack_ts']), tz=timezone.utc)
+            elapsed = (datetime.now(timezone.utc) - posted_at).total_seconds()
+            slack_client.chat_postMessage(
+                channel=lichess.SLACK_CHANNEL_ID,
+                thread_ts=puzzle['slack_ts'],
+                text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed)}!",
+            )
+
         return Response(status_code=200)
-
-    thread_ts = event.get('thread_ts')
-    if not thread_ts or thread_ts == event.get('ts'):
-        return Response(status_code=200)
-
-    text = event.get('text', '').strip()
-    san_moves = text.split()
-    if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
-        return Response(status_code=200)  # not move-like - leave normal thread chatter alone
-
-    puzzle = db.get_puzzle_by_slack_ts(thread_ts)
-    if puzzle is None:
-        return Response(status_code=200)
-
-    user_id = event['user']
-    puzzle_date = datetime.strptime(puzzle['date'], '%Y-%m-%d').strftime('%B %d, %Y')
-    puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
-
-    if db.has_submitted(puzzle['puzzle_id'], user_id):
-        dm(slack_client, user_id, f"You've already submitted an answer for {puzzle_link} - only your first attempt counts.")
-        return Response(status_code=200)
-
-    correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
-
-    if not db.record_submission(puzzle['puzzle_id'], user_id, get_display_name(slack_client, user_id), text, correct):
-        return Response(status_code=200)  # duplicate delivery of the same event, already recorded
-
-    result_text = (
-        "That's correct - nice work!" if correct
-        else f"Not quite. The solution was: `{' '.join(puzzle['solution'])}`"
-    )
-    dm(slack_client, user_id, f"{puzzle_link}\nYou answered: `{text}`\n{result_text}")
 
     return Response(status_code=200)
 
@@ -123,6 +139,4 @@ async def leaderboard_command(request: Request):
     if not board:
         return {"response_type": "ephemeral", "text": "No submissions yet."}
 
-    lines = [f"{i + 1}. <@{row['user_id']}> - {row['score']}" for i, row in enumerate(board)]
-    header = "*🏆 Leaderboard* _(puzzles solved correctly)_"
-    return {"response_type": "in_channel", "text": f"{header}\n" + "\n".join(lines)}
+    return {"response_type": "in_channel", "text": format_leaderboard(board)}

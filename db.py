@@ -1,11 +1,13 @@
 import json
 import os
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import turso_serverless
 
 import migrations
+import queries
 
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
@@ -34,7 +36,7 @@ def init_db() -> None:
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
     with get_connection() as conn:
         conn.cursor().execute(
-            "INSERT OR REPLACE INTO puzzles (puzzle_id, date, fen, solution, slack_ts) VALUES (?, ?, ?, ?, ?)",
+            queries.SAVE_PUZZLE,
             (puzzle_id, date, fen, json.dumps(solution), slack_ts),
         )
 
@@ -52,7 +54,7 @@ def _row_to_puzzle(row: dict) -> dict:
 def get_latest_puzzle() -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM puzzles ORDER BY date DESC LIMIT 1")
+        cur.execute(queries.GET_LATEST_PUZZLE)
         row = cur.fetchone()
         return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
 
@@ -60,7 +62,15 @@ def get_latest_puzzle() -> dict | None:
 def get_puzzle_by_slack_ts(slack_ts: str) -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM puzzles WHERE slack_ts = ?", (slack_ts,))
+        cur.execute(queries.GET_PUZZLE_BY_SLACK_TS, (slack_ts,))
+        row = cur.fetchone()
+        return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
+
+
+def get_puzzle(puzzle_id: str) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(queries.GET_PUZZLE_BY_ID, (puzzle_id,))
         row = cur.fetchone()
         return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
 
@@ -68,10 +78,7 @@ def get_puzzle_by_slack_ts(slack_ts: str) -> dict | None:
 def has_submitted(puzzle_id: str, user_id: str) -> bool:
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "SELECT 1 FROM submissions WHERE puzzle_id = ? AND user_id = ? AND active = 1",
-            (puzzle_id, user_id),
-        )
+        cur.execute(queries.HAS_SUBMITTED, (puzzle_id, user_id))
         return cur.fetchone() is not None
 
 
@@ -80,8 +87,7 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
     with get_connection() as conn:
         try:
             conn.cursor().execute(
-                "INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, submitted_at, active) "
-                "VALUES (?, ?, ?, ?, ?, ?, 1)",
+                queries.INSERT_SUBMISSION,
                 (puzzle_id, user_id, user_name, moves, int(correct), datetime.now(timezone.utc).isoformat()),
             )
         except turso_serverless.IntegrityError:
@@ -93,26 +99,36 @@ def deactivate_submission(submission_id: int) -> bool:
     """Soft-deletes a submission by id. Returns True if a row was affected."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(
-            "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1",
-            (submission_id,),
-        )
+        cur.execute(queries.DEACTIVATE_SUBMISSION, (submission_id,))
         return cur.rowcount > 0
 
 
+def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
+    posted_at = datetime.fromtimestamp(float(puzzle_slack_ts), tz=timezone.utc)
+    submitted_at = datetime.fromisoformat(submitted_at)
+    return (submitted_at - posted_at).total_seconds()
+
+
 def get_leaderboard(limit: int = 10) -> list:
+    """Ranks by correct answers, breaking ties by fastest average solve time
+    (time from puzzle post to submission, over correct answers only)."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT user_id, MAX(user_name) AS user_name, SUM(correct) AS score
-            FROM submissions
-            WHERE active = 1
-            GROUP BY user_id
-            ORDER BY score DESC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        rows = cur.fetchall()
-        return [_row_to_dict(cur, row) for row in rows]
+
+        cur.execute(queries.LEADERBOARD_TOTALS)
+        board = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
+
+        cur.execute(queries.LEADERBOARD_SOLVE_TIMES)
+        solve_times = defaultdict(list)
+        for row in (_row_to_dict(cur, r) for r in cur.fetchall()):
+            solve_times[row["user_id"]].append(_solve_seconds(row["submitted_at"], row["slack_ts"]))
+
+    for user_id, entry in board.items():
+        times = solve_times.get(user_id)
+        entry["avg_solve_seconds"] = sum(times) / len(times) if times else None
+
+    ranked = sorted(
+        board.values(),
+        key=lambda r: (-r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
+    )
+    return ranked[:limit]
