@@ -54,6 +54,7 @@ Migrations are idempotent functions in `migrations.py`, tracked by name in a
 | `CRON_SECRET` | Bearer token required on `/cron/send-puzzle`; check is skipped if unset |
 | `TURSO_DATABASE_URL` | e.g. `libsql://<db>-<org>.turso.io` |
 | `TURSO_AUTH_TOKEN` | Turso auth token |
+| `PUBLIC_BASE_URL` | Where `/puzzle-image` is publicly reachable; defaults to the production Vercel domain. **Must** be overridden to your tunnel URL for local development - Slack fetches this URL directly, so it can't be `localhost` or a stale production host |
 
 ## Slack app configuration
 
@@ -85,9 +86,13 @@ export SLACK_CHANNEL_ID=...
 export SLACK_SIGNING_SECRET=...
 export TURSO_DATABASE_URL=libsql://...
 export TURSO_AUTH_TOKEN=...
+export PUBLIC_BASE_URL=https://<your-ngrok-subdomain>.ngrok-free.app
 uvicorn app:app --reload
 ```
 
-Slack needs a public HTTPS URL for `/slack/interactions` and
-`/slack/leaderboard` - use ngrok locally and point the Slack app's Request
-URLs at it.
+Slack needs a public HTTPS URL for `/slack/interactions`, `/slack/leaderboard`,
+and `/puzzle-image` - use ngrok locally, point the Slack app's Request URLs at
+it, and set `PUBLIC_BASE_URL` to it too. Skipping `PUBLIC_BASE_URL` locally
+means the puzzle image link falls back to the production domain, which Slack
+will fetch instead of your local server - `POST /send_puzzle` will fail with
+`invalid_blocks` if that image URL doesn't resolve.

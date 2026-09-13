@@ -60,11 +60,11 @@ async def delete_submission(submission_id: int):
     return Response(status_code=200)
 
 @app.get('/puzzle-image/{puzzle_id}')
-async def puzzle_image(puzzle_id: str, w: int = 360):
-    puzzle = db.get_puzzle(puzzle_id)
-    if puzzle is None:
-        raise HTTPException(status_code=404, detail="Puzzle not found")
-    return Response(content=lichess.get_resized_puzzle_image(puzzle['fen'], w), media_type="image/png")
+async def puzzle_image(puzzle_id: str, fen: str, w: int = 360):
+    # puzzle_id isn't used for a lookup - it's just in the path so each puzzle gets its
+    # own URL. Taking fen directly avoids depending on the puzzle already being saved,
+    # since this gets fetched by Slack while validating the very message that saves it.
+    return Response(content=lichess.get_resized_puzzle_image(fen, w), media_type="image/png")
 
 @app.post('/slack/interactions')
 async def slack_interactions(request: Request):

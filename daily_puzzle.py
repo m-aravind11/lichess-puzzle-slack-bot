@@ -2,6 +2,7 @@ import io
 import logging
 import os
 from datetime import datetime
+from urllib.parse import quote
 import requests
 from PIL import Image
 
@@ -158,11 +159,12 @@ class LichessDailyPuzzle:
         puzzle_id = daily_puzzle['puzzle']['id']
 
         today = datetime.now()
+        image_link = f"{PUBLIC_BASE_URL}/puzzle-image/{puzzle_id}?fen={quote(fen, safe='')}&w=360"
         thread_ts = self.send_puzzle_to_slack(
             self.get_board_from_fen(fen),
             today.strftime("%B %d, %Y"),
             puzzle_id,
-            f"{PUBLIC_BASE_URL}/puzzle-image/{puzzle_id}?w=360",
+            image_link,
         )
 
         san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
