@@ -23,14 +23,11 @@ Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
 
 ## Files
 
-Application code lives under `src/`; `app.py` at the repo root is a thin
-shim that loads `src/app.py` and re-exports its FastAPI instance, since
-Vercel's zero-config Python detection looks for `app.py` at the project root.
-
 | File | What it does |
 |---|---|
 | `app.py` | Root shim for Vercel - re-exports `src/app.py`'s `app` |
 | `src/app.py` | FastAPI routes |
+| `src/interactions.py` | Answer modal handling - opening it and processing its submission |
 | `src/daily_puzzle.py` | Lichess API + Slack posting, move parsing/verification |
 | `src/db.py` | Query layer (Turso/libSQL) |
 | `src/queries.py` | Raw SQL used by `db.py` |

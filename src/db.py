@@ -1,5 +1,6 @@
 import json
 import os
+import queue
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -12,15 +13,28 @@ import queries
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
 
+# DB Connection pool
+_pool: "queue.Queue" = queue.Queue()
+
+
+def _acquire_connection():
+    try:
+        return _pool.get_nowait()
+    except queue.Empty:
+        return turso_serverless.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+
 
 @contextmanager
 def get_connection():
-    conn = turso_serverless.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+    conn = _acquire_connection()
     try:
         yield conn
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
-        conn.close()
+        _pool.put(conn)
 
 
 def _row_to_dict(cursor, row) -> dict:
