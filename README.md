@@ -1,85 +1,80 @@
 # Lichess Puzzle Slack Bot
 
-Posts the Lichess daily puzzle to a Slack channel, lets people answer privately via a
-button-triggered modal (so answers never appear in the thread for others to copy),
-DMs each person whether they got it right, and tracks a leaderboard.
+Posts the Lichess daily puzzle to Slack. People answer through a private modal
+(not a thread reply, so answers can't be copied), get DMed the result, and
+there's a leaderboard.
 
 ## How it works
 
-1. A cron (or a manual `POST /send_puzzle`) fetches the day's puzzle from Lichess and
-   posts it as a single Slack message: the position image (linked directly from
-   [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus a
-   "Submit Answer" button. The FEN and solution (converted to SAN) are stored against
-   that message's `ts` in the database, keyed by the puzzle's id.
-2. Clicking the button opens a modal (`POST /slack/interactions`, Slack's
-   `block_actions` payload) with a single text input. Submitting it (a
-   `view_submission` payload on the same endpoint) looks up the puzzle by id, checks
-   the user hasn't already answered, verifies the moves against the solution, records
-   the submission, and DMs the result. A correct answer also gets a short public
-   "solved it in M:SS" message posted to the puzzle's thread - visible for
-   encouragement, without ever revealing the moves.
-3. `/leaderboard` (a Slack slash command) posts the current standings to the channel.
+1. `POST /send_puzzle` (or the `/cron/send-puzzle` cron) fetches the day's
+   puzzle from Lichess and posts one Slack message: the board image (linked
+   straight from [chessvision.ai](https://fen2image.chessvision.ai), no
+   upload needed) plus a "Submit Answer" button. The puzzle's FEN, solution,
+   and this message's `ts` are saved to the DB, keyed by puzzle id.
+2. Clicking the button opens a modal (`POST /slack/interactions`). Submitting
+   it checks the moves against the solution, records the submission, and DMs
+   the result. A correct answer also gets a "solved it in M:SS" reply posted
+   in the puzzle's thread.
+3. `/leaderboard` posts current standings to the channel.
 
-Move verification (`LichessDailyPuzzle.check_answer` in `daily_puzzle.py`) parses
-both the submitted and solution moves with `python-chess` and compares the resulting
-UCI move sequence, rather than comparing strings directly - so `Qe2`, `Qxe2`, `Q*e2`
-and `qxe2#` are all treated as the same move when legal, and check/mate suffixes,
-capture markers, and letter case don't have to match exactly.
+Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
+`python-chess` and compares UCI move sequences instead of raw strings, so
+`Qe2`, `Qxe2`, `Q*e2`, and `qxe2#` all count as the same move.
 
 ## Files
 
-| File | Responsibility |
+| File | What it does |
 |---|---|
-| `app.py` | FastAPI routes: puzzle trigger, Slack interactivity, leaderboard command |
-| `daily_puzzle.py` | Talks to the Lichess API and Slack, chess move parsing/verification |
+| `app.py` | FastAPI routes |
+| `daily_puzzle.py` | Lichess API + Slack posting, move parsing/verification |
 | `db.py` | Query layer (Turso/libSQL) |
 | `queries.py` | Raw SQL used by `db.py` |
-| `migrations.py` | Schema migrations, tracked in a `schema_migrations` table |
-| `constants.py` | Shared constants and request models (SAN regex, modal/action ids, `Submission`) |
-| `slack_helpers.py` | Slack API helpers shared across routes (DM, display name lookup, message formatting) |
+| `migrations.py` | Schema migrations |
+| `constants.py` | Shared constants and request models |
+| `slack_helpers.py` | Slack API helpers (DM, display name, message formatting) |
 | `slack_verify.py` | Verifies Slack request signatures |
+| `manifest.json` | Slack app manifest - paste into the App Manifest tab at api.slack.com/apps |
 
 ## Storage
 
-Uses [Turso](https://turso.tech) (hosted libSQL, SQLite-compatible) via the
-`turso-serverless` driver - not a local SQLite file. This matters because the app is
-deployed on Vercel, whose serverless functions have a read-only filesystem outside
-`/tmp`, and `/tmp` isn't persisted between invocations. A local `sqlite3` file works
-fine for local development but cannot be the system of record once deployed.
+Turso (hosted libSQL) via `turso-serverless`, not a local SQLite file - Vercel's
+serverless functions have a read-only filesystem outside `/tmp`, and `/tmp`
+doesn't persist between invocations.
 
-Migrations live in `migrations.py` as small idempotent functions tracked by name in a
-`schema_migrations` table, applied automatically on startup (`db.init_db()`) - no
-separate migration step or tool required.
+Migrations are idempotent functions in `migrations.py`, tracked by name in a
+`schema_migrations` table, and run automatically by `db.init_db()`.
 
 ## Environment variables
 
 | Variable | Used for |
 |---|---|
-| `LICHESS_OAUTH_TOKEN` | Slack bot token (historical name - this is not a Lichess credential, it's passed straight to `slack_sdk.WebClient`) |
+| `LICHESS_OAUTH_TOKEN` | Slack bot token (historical name, not a Lichess credential) |
 | `SLACK_CHANNEL_ID` | Channel the daily puzzle is posted to |
-| `SLACK_SIGNING_SECRET` | Verifies incoming Slack requests (interactions + slash commands) |
+| `SLACK_SIGNING_SECRET` | Verifies incoming Slack requests |
+| `CRON_SECRET` | Bearer token required on `/cron/send-puzzle`; check is skipped if unset |
 | `TURSO_DATABASE_URL` | e.g. `libsql://<db>-<org>.turso.io` |
 | `TURSO_AUTH_TOKEN` | Turso auth token |
 
 ## Slack app configuration
 
-The bot needs:
+Paste `manifest.json` into the App Manifest tab at api.slack.com/apps, swap
+in your host in the two URLs, and reinstall the app. It sets:
 
-- **Bot token scopes**: `chat:write`, `commands`, `im:write`, `users:read`.
-- **Interactivity & Shortcuts**: enabled, Request URL `https://<host>/slack/interactions`
-  - this is what powers the "Submit Answer" button and its modal.
-- **Slash commands**: `/leaderboard` → `https://<host>/slack/leaderboard`.
-- **Event Subscriptions**: not used - no bot events are subscribed to.
+- Bot scopes: `chat:write`, `commands`, `im:write`, `users:read`
+- Interactivity, Request URL → `/slack/interactions`
+- Slash command `/leaderboard` → `/slack/leaderboard`
 
 ## Endpoints
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | Status page |
-| `POST /send_puzzle` | Fetches and posts the daily puzzle (call this from a scheduler) |
-| `POST /slack/interactions` | Slack Interactivity callback - opens the answer modal and handles its submission |
-| `POST /slack/leaderboard` | Slack slash command - posts the leaderboard |
-| `POST /submit` | Older, standalone endpoint: verifies `moves` against a given `lichess_puzzle_id` directly against the Lichess API. Not used by the Slack flow. |
+| `POST /send_puzzle` | Fetches and posts the daily puzzle |
+| `GET /cron/send-puzzle` | Same, gated by `CRON_SECRET` - what Vercel's cron actually hits (see `vercel.json`) |
+| `POST /slack/interactions` | Opens the answer modal, handles its submission |
+| `POST /slack/leaderboard` | Slash command - posts the leaderboard |
+| `DELETE /submissions/{id}` | Soft-deletes a submission by id |
+| `POST /submit` | Old standalone endpoint - checks moves against a given puzzle id directly via the Lichess API. Not used by the Slack flow. |
 
 ## Local development
 
@@ -93,6 +88,6 @@ export TURSO_AUTH_TOKEN=...
 uvicorn app:app --reload
 ```
 
-Slack needs a public HTTPS URL to reach `/slack/interactions` and `/slack/leaderboard` -
-use a tunnel (e.g. `ngrok http 8000`) during local development and update the Slack
-app's Request URLs to match.
+Slack needs a public HTTPS URL for `/slack/interactions` and
+`/slack/leaderboard` - use ngrok locally and point the Slack app's Request
+URLs at it.
