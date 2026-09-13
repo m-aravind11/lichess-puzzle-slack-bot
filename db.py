@@ -34,9 +34,16 @@ def init_db() -> None:
 
 
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
+    """Creates the puzzle row the first time it's posted. A resend of the same
+    puzzle_id (e.g. testing, a duplicate cron trigger) is a no-op, so existing
+    submissions stay timed against the original post rather than a later one."""
     with get_connection() as conn:
-        conn.cursor().execute(
-            queries.SAVE_PUZZLE,
+        cur = conn.cursor()
+        cur.execute(queries.GET_ACTIVE_PUZZLE_BY_ID, (puzzle_id,))
+        if cur.fetchone() is not None:
+            return
+        cur.execute(
+            queries.INSERT_PUZZLE,
             (puzzle_id, date, fen, json.dumps(solution), slack_ts),
         )
 
@@ -55,14 +62,6 @@ def get_latest_puzzle() -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(queries.GET_LATEST_PUZZLE)
-        row = cur.fetchone()
-        return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
-
-
-def get_puzzle_by_slack_ts(slack_ts: str) -> dict | None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(queries.GET_PUZZLE_BY_SLACK_TS, (slack_ts,))
         row = cur.fetchone()
         return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
 
@@ -121,7 +120,12 @@ def get_leaderboard(limit: int = 10) -> list:
         cur.execute(queries.LEADERBOARD_SOLVE_TIMES)
         solve_times = defaultdict(list)
         for row in (_row_to_dict(cur, r) for r in cur.fetchall()):
-            solve_times[row["user_id"]].append(_solve_seconds(row["submitted_at"], row["slack_ts"]))
+            seconds = _solve_seconds(row["submitted_at"], row["slack_ts"])
+            # A negative value means the puzzle's stored slack_ts was overwritten by a
+            # later repost (puzzles.puzzle_id is the primary key) after this submission
+            # was recorded against the earlier post - bad data, not a real solve time.
+            if seconds >= 0:
+                solve_times[row["user_id"]].append(seconds)
 
     for user_id, entry in board.items():
         times = solve_times.get(user_id)

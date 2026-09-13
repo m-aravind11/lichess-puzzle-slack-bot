@@ -6,10 +6,11 @@ DMs each person whether they got it right, and tracks a leaderboard.
 
 ## How it works
 
-1. A cron (or a manual `POST /send_puzzle`) fetches the day's puzzle from Lichess,
-   renders the position as an image, and posts it to a Slack channel as a message
-   thread with a "Submit Answer" button. The FEN and solution (converted to SAN) are
-   stored against that thread's `ts` in the database, keyed by the puzzle's id.
+1. A cron (or a manual `POST /send_puzzle`) fetches the day's puzzle from Lichess and
+   posts it as a single Slack message: the position image (linked directly from
+   [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus a
+   "Submit Answer" button. The FEN and solution (converted to SAN) are stored against
+   that message's `ts` in the database, keyed by the puzzle's id.
 2. Clicking the button opens a modal (`POST /slack/interactions`, Slack's
    `block_actions` payload) with a single text input. Submitting it (a
    `view_submission` payload on the same endpoint) looks up the puzzle by id, checks
@@ -64,7 +65,7 @@ separate migration step or tool required.
 
 The bot needs:
 
-- **Bot token scopes**: `chat:write`, `commands`, `files:write`, `im:write`, `users:read`.
+- **Bot token scopes**: `chat:write`, `commands`, `im:write`, `users:read`.
 - **Interactivity & Shortcuts**: enabled, Request URL `https://<host>/slack/interactions`
   - this is what powers the "Submit Answer" button and its modal.
 - **Slash commands**: `/leaderboard` → `https://<host>/slack/leaderboard`.

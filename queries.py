@@ -1,13 +1,13 @@
-SAVE_PUZZLE = """
-    INSERT OR REPLACE INTO puzzles (puzzle_id, date, fen, solution, slack_ts)
-    VALUES (?, ?, ?, ?, ?)
+GET_ACTIVE_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
+
+INSERT_PUZZLE = """
+    INSERT INTO puzzles (puzzle_id, date, fen, solution, slack_ts, active)
+    VALUES (?, ?, ?, ?, ?, 1)
 """
 
-GET_LATEST_PUZZLE = "SELECT * FROM puzzles ORDER BY date DESC LIMIT 1"
+GET_LATEST_PUZZLE = "SELECT * FROM puzzles WHERE active = 1 ORDER BY date DESC LIMIT 1"
 
-GET_PUZZLE_BY_SLACK_TS = "SELECT * FROM puzzles WHERE slack_ts = ?"
-
-GET_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ?"
+GET_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 
 HAS_SUBMITTED = """
     SELECT 1 FROM submissions WHERE puzzle_id = ? AND user_id = ? AND active = 1

@@ -27,7 +27,7 @@ def get_display_name(slack_client: WebClient, user_id: str) -> str:
 
 
 def format_seconds(seconds: float | None) -> str:
-    if seconds is None:
+    if seconds is None or seconds < 0:
         return "-"
     total = int(seconds)
     return f"{total // 60}:{total % 60:02d}"

@@ -1,7 +1,6 @@
 import io
 import logging
 import os
-import tempfile
 from datetime import datetime
 import requests
 
@@ -18,7 +17,6 @@ class Constants:
     LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
     LICHESS_PUZZLE_SOLUTION_URL = "https://lichess.org/api/puzzle/"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
-    PUZZLE_IMAGE_FILENAME_TEMPLATE = "Lichess Daily Puzzle {}.png"
 
 class LichessDailyPuzzle:
     def __init__(self):
@@ -97,15 +95,8 @@ class LichessDailyPuzzle:
 
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
-    
-    def save_puzzle_image(self, img_link: str, filename: str) -> None:
-        get_response = requests.get(img_link, stream=True)
-        with open(filename, 'wb') as f:
-            for chunk in get_response.iter_content(chunk_size=1024):
-                if chunk:
-                    f.write(chunk)
 
-    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
         try:
@@ -126,6 +117,11 @@ class LichessDailyPuzzle:
                         },
                     },
                     {
+                        "type": "image",
+                        "image_url": image_link,
+                        "alt_text": f"Daily puzzle - {date_str}",
+                    },
+                    {
                         "type": "actions",
                         "elements": [
                             {
@@ -138,17 +134,7 @@ class LichessDailyPuzzle:
                     },
                 ],
             )
-            thread_ts = root['ts']
-
-            response = slack_client.files_upload_v2(
-                channel=self.SLACK_CHANNEL_ID,
-                file=self.puzzle_filename,
-                thread_ts=thread_ts,
-            )
-            logger.info("Puzzle posted: %s", response)
-            assert response["file"]  # the uploaded file
-
-            return thread_ts
+            return root['ts']
         except SlackApiError as e:
             # You will get a SlackApiError if "ok" is False
             assert e.response["ok"] is False
@@ -163,12 +149,11 @@ class LichessDailyPuzzle:
         encoded_fen = self.encode_fen_for_url(fen)
 
         today = datetime.now()
-        filename = Constants.PUZZLE_IMAGE_FILENAME_TEMPLATE.format(today.strftime("%Y-%m-%d"))
-        self.puzzle_filename = os.path.join(tempfile.gettempdir(), filename)
-
-        self.save_puzzle_image(self.get_image_link_from_fen(encoded_fen), self.puzzle_filename)
         thread_ts = self.send_puzzle_to_slack(
-            self.get_board_from_fen(fen), today.strftime("%B %d, %Y"), daily_puzzle['puzzle']['id']
+            self.get_board_from_fen(fen),
+            today.strftime("%B %d, %Y"),
+            daily_puzzle['puzzle']['id'],
+            self.get_image_link_from_fen(encoded_fen),
         )
 
         san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])

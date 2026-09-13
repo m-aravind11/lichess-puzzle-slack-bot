@@ -1,0 +1,37 @@
+{
+    "display_information": {
+        "name": "Lichess Puzzle Bot",
+        "description": "An interactive chess app that posts puzzles from Lichess Daily and manages leaderboard",
+        "background_color": "#000000"
+    },
+    "features": {
+        "bot_user": {
+            "display_name": "Lichess Puzzle Bot"
+        },
+        "slash_commands": [
+            {
+                "command": "/leaderboard",
+                "url": "https://lichess-puzzle-slack-bot.vercel.app/slack/leaderboard",
+                "description": "Display scores of participants",
+                "usage_hint": "show leaderboard",
+                "should_escape": false
+            }
+        ]
+    },
+    "oauth_config": {
+        "scopes": {
+            "bot": [
+                "users:read",
+                "chat:write",
+                "commands",
+                "im:write"
+            ]
+        }
+    },
+    "settings": {
+        "interactivity": {
+            "is_enabled": true,
+            "request_url": "https://lichess-puzzle-slack-bot.vercel.app/slack/interactions"
+        }
+    }
+}
