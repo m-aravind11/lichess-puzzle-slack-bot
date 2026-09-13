@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import queue
@@ -27,14 +28,35 @@ def _acquire_connection():
 @contextmanager
 def get_connection():
     conn = _acquire_connection()
+    stale = False
     try:
         yield conn
         conn.commit()
+    except turso_serverless.OperationalError:
+        # Pooled connection's HTTP stream died server-side (idle timeout,
+        # redeploy). Drop it instead of returning it to the pool - a poisoned
+        # connection would fail the same way for every future invocation.
+        stale = True
+        raise
     except Exception:
         conn.rollback()
         raise
     finally:
-        _pool.put(conn)
+        if not stale:
+            _pool.put(conn)
+
+
+def _retry_stale_connection(fn):
+    """A pooled connection can go stale between calls (Turso closes idle HTTP
+    streams server-side). get_connection() evicts a stale one on failure, so
+    retrying once here gets a fresh connection instead of surfacing a 500."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except turso_serverless.OperationalError:
+            return fn(*args, **kwargs)
+    return wrapper
 
 
 def _row_to_dict(cursor, row) -> dict:
@@ -47,6 +69,7 @@ def init_db() -> None:
         migrations.run_migrations(conn)
 
 
+@_retry_stale_connection
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
     """Creates the puzzle row the first time it's posted. A resend of the same
     puzzle_id (e.g. testing, a duplicate cron trigger) is a no-op, so existing
@@ -72,6 +95,7 @@ def _row_to_puzzle(row: dict) -> dict:
     }
 
 
+@_retry_stale_connection
 def get_latest_puzzle() -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
@@ -86,6 +110,7 @@ def get_latest_puzzle() -> dict | None:
 _puzzle_cache: dict = {}
 
 
+@_retry_stale_connection
 def get_puzzle(puzzle_id: str) -> dict | None:
     if puzzle_id in _puzzle_cache:
         return _puzzle_cache[puzzle_id]
@@ -101,6 +126,7 @@ def get_puzzle(puzzle_id: str) -> dict | None:
     return puzzle
 
 
+@_retry_stale_connection
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool) -> bool:
     """Returns False if the user already has an active submission for this puzzle (no-op), True if recorded."""
     with get_connection() as conn:
@@ -114,6 +140,7 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
     return True
 
 
+@_retry_stale_connection
 def deactivate_submission(submission_id: int) -> bool:
     """Soft-deletes a submission by id. Returns True if a row was affected."""
     with get_connection() as conn:
@@ -128,6 +155,7 @@ def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
     return (submitted_at - posted_at).total_seconds()
 
 
+@_retry_stale_connection
 def get_leaderboard(limit: int = 10) -> list:
     """Ranks by correct answers, breaking ties by fastest average solve time
     (time from puzzle post to submission, over correct answers only)."""
