@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from slack_sdk import WebClient
 
@@ -59,8 +59,29 @@ async def delete_submission(submission_id: int):
         raise HTTPException(status_code=404, detail="Submission not found or already inactive")
     return Response(status_code=200)
 
+def _finish_submission(puzzle_id: str, user_id: str, text: str, correct: bool, puzzle: dict) -> None:
+    """The slow part of handling a submission (Slack API calls for the display name
+    lookup, the result DM, and the thread announcement) - run after Slack's already
+    been ack'd, since together they risk missing the interaction's 3-second budget."""
+    user_name = get_display_name(slack_client, user_id)
+
+    if not db.record_submission(puzzle_id, user_id, user_name, text, correct):
+        return  # duplicate delivery of the same submission, already recorded
+
+    dm(slack_client, user_id, format_result_dm(puzzle, text, correct))
+
+    if correct and puzzle['slack_ts']:
+        posted_at = datetime.fromtimestamp(float(puzzle['slack_ts']), tz=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - posted_at).total_seconds()
+        slack_client.chat_postMessage(
+            channel=lichess.SLACK_CHANNEL_ID,
+            thread_ts=puzzle['slack_ts'],
+            text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed)}!",
+        )
+
+
 @app.post('/slack/interactions')
-async def slack_interactions(request: Request):
+async def slack_interactions(request: Request, background_tasks: BackgroundTasks):
     body = await verify_slack_request(request)
     payload = json.loads(parse_qs(body.decode())['payload'][0])
 
@@ -115,22 +136,7 @@ async def slack_interactions(request: Request):
             }
 
         correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
-        user_name = get_display_name(slack_client, user_id)
-
-        if not db.record_submission(puzzle_id, user_id, user_name, text, correct):
-            return Response(status_code=200)  # duplicate delivery of the same submission, already recorded
-
-        dm(slack_client, user_id, format_result_dm(puzzle, text, correct))
-
-        if correct and puzzle['slack_ts']:
-            posted_at = datetime.fromtimestamp(float(puzzle['slack_ts']), tz=timezone.utc)
-            elapsed = (datetime.now(timezone.utc) - posted_at).total_seconds()
-            slack_client.chat_postMessage(
-                channel=lichess.SLACK_CHANNEL_ID,
-                thread_ts=puzzle['slack_ts'],
-                text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed)}!",
-            )
-
+        background_tasks.add_task(_finish_submission, puzzle_id, user_id, text, correct, puzzle)
         return Response(status_code=200)
 
     return Response(status_code=200)
