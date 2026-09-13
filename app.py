@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -60,7 +61,7 @@ async def slack_events(request: Request):
         return {"challenge": payload['challenge']}
 
     if request.headers.get('X-Slack-Retry-Num'):
-        # Slack re-delivering an event we (probably) already handled — e.g. it didn't
+        # Slack re-delivering an event we (probably) already handled - e.g. it didn't
         # get an ack in time. Reprocessing risks the "already answered" DM firing on
         # what the user experiences as their first and only message.
         return {"ok": True}
@@ -79,15 +80,18 @@ async def slack_events(request: Request):
     text = event.get('text', '').strip()
     san_moves = text.split()
     if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
-        return {"ok": True}  # not move-like — leave normal thread chatter alone
+        return {"ok": True}  # not move-like - leave normal thread chatter alone
 
     puzzle = db.get_puzzle_by_slack_ts(thread_ts)
     if puzzle is None:
         return {"ok": True}
 
     user_id = event['user']
+    puzzle_date = datetime.strptime(puzzle['date'], '%Y-%m-%d').strftime('%B %d, %Y')
+    puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
+
     if db.has_submitted(puzzle['puzzle_id'], user_id):
-        dm(slack_client, user_id, f"You've already answered <https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle {puzzle['puzzle_id']}>.")
+        dm(slack_client, user_id, f"You've already submitted an answer for {puzzle_link} - only your first attempt counts.")
         return {"ok": True}
 
     correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
@@ -95,9 +99,11 @@ async def slack_events(request: Request):
     if not db.record_submission(puzzle['puzzle_id'], user_id, get_display_name(slack_client, user_id), text, correct):
         return {"ok": True}  # duplicate delivery of the same event, already recorded
 
-    puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle {puzzle['puzzle_id']}>"
-    result_text = "Correct! Well solved." if correct else f"Not quite. Solution: {' '.join(puzzle['solution'])}"
-    dm(slack_client, user_id, f"{puzzle_link}\n{result_text}")
+    result_text = (
+        "That's correct - nice work!" if correct
+        else f"Not quite. The solution was: `{' '.join(puzzle['solution'])}`"
+    )
+    dm(slack_client, user_id, f"{puzzle_link}\nYou answered: `{text}`\n{result_text}")
 
     return {"ok": True}
 
@@ -109,5 +115,6 @@ async def leaderboard_command(request: Request):
     if not board:
         return {"response_type": "ephemeral", "text": "No submissions yet."}
 
-    lines = [f"{i + 1}. <@{row['user_id']}> — {row['score']}" for i, row in enumerate(board)]
-    return {"response_type": "in_channel", "text": "*🏆 Leaderboard*\n" + "\n".join(lines)}
+    lines = [f"{i + 1}. <@{row['user_id']}> - {row['score']}" for i, row in enumerate(board)]
+    header = "*🏆 Leaderboard* _(puzzles solved correctly)_"
+    return {"response_type": "in_channel", "text": f"{header}\n" + "\n".join(lines)}

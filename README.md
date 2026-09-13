@@ -17,7 +17,7 @@ the thread, DMs each person whether they got it right, and tracks a leaderboard.
 
 Move verification (`LichessDailyPuzzle.check_answer` in `daily_puzzle.py`) parses
 both the submitted and solution moves with `python-chess` and compares the resulting
-UCI move sequence, rather than comparing strings directly — so `Qe2`, `Qxe2`, `Q*e2`
+UCI move sequence, rather than comparing strings directly - so `Qe2`, `Qxe2`, `Q*e2`
 and `qxe2#` are all treated as the same move when legal, and check/mate suffixes,
 capture markers, and letter case don't have to match exactly.
 
@@ -35,20 +35,20 @@ capture markers, and letter case don't have to match exactly.
 ## Storage
 
 Uses [Turso](https://turso.tech) (hosted libSQL, SQLite-compatible) via the
-`turso-serverless` driver — not a local SQLite file. This matters because the app is
+`turso-serverless` driver - not a local SQLite file. This matters because the app is
 deployed on Vercel, whose serverless functions have a read-only filesystem outside
 `/tmp`, and `/tmp` isn't persisted between invocations. A local `sqlite3` file works
 fine for local development but cannot be the system of record once deployed.
 
 Migrations live in `migrations.py` as small idempotent functions tracked by name in a
-`schema_migrations` table, applied automatically on startup (`db.init_db()`) — no
+`schema_migrations` table, applied automatically on startup (`db.init_db()`) - no
 separate migration step or tool required.
 
 ## Environment variables
 
 | Variable | Used for |
 |---|---|
-| `LICHESS_OAUTH_TOKEN` | Slack bot token (historical name — this is not a Lichess credential, it's passed straight to `slack_sdk.WebClient`) |
+| `LICHESS_OAUTH_TOKEN` | Slack bot token (historical name - this is not a Lichess credential, it's passed straight to `slack_sdk.WebClient`) |
 | `SLACK_CHANNEL_ID` | Channel the daily puzzle is posted to |
 | `SLACK_SIGNING_SECRET` | Verifies incoming Slack requests (events + slash commands) |
 | `TURSO_DATABASE_URL` | e.g. `libsql://<db>-<org>.turso.io` |
@@ -64,7 +64,7 @@ The bot needs:
   the bot event `message.channels` (or `message.groups` for a private channel).
 - **Slash commands**: `/leaderboard` → `https://<host>/slack/leaderboard`.
 
-Slash commands are rejected by Slack inside a thread reply — that's why answering a
+Slash commands are rejected by Slack inside a thread reply - that's why answering a
 puzzle is a plain thread reply handled through the Events API instead of a command.
 
 ## Endpoints
@@ -73,8 +73,8 @@ puzzle is a plain thread reply handled through the Events API instead of a comma
 |---|---|
 | `GET /` | Status page |
 | `POST /send_puzzle` | Fetches and posts the daily puzzle (call this from a scheduler) |
-| `POST /slack/events` | Slack Events API callback — puzzle answers |
-| `POST /slack/leaderboard` | Slack slash command — posts the leaderboard |
+| `POST /slack/events` | Slack Events API callback - puzzle answers |
+| `POST /slack/leaderboard` | Slack slash command - posts the leaderboard |
 | `POST /submit` | Older, standalone endpoint: verifies `moves` against a given `lichess_puzzle_id` directly against the Lichess API. Not used by the Slack flow. |
 
 ## Local development
@@ -89,6 +89,6 @@ export TURSO_AUTH_TOKEN=...
 uvicorn app:app --reload
 ```
 
-Slack needs a public HTTPS URL to reach `/slack/events` and `/slack/leaderboard` —
+Slack needs a public HTTPS URL to reach `/slack/events` and `/slack/leaderboard` -
 use a tunnel (e.g. `ngrok http 8000`) during local development and update the Slack
 app's Request URLs to match.

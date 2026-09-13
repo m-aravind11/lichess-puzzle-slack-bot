@@ -70,7 +70,7 @@ class LichessDailyPuzzle:
         return token
 
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
-        """Tolerant of a missing/'*' capture marker, letter case, and check/mate suffixes —
+        """Tolerant of a missing/'*' capture marker, letter case, and check/mate suffixes -
         e.g. Qe2, Qxe2, Q*e2 and qxe2# all resolve to the same move when legal."""
         board = self.get_board_from_fen(fen)
         try:
@@ -111,11 +111,10 @@ class LichessDailyPuzzle:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
                 text=(
-                    f"🧩 *Daily Puzzle — {date_str}*\n"
-                    f"{self.whose_move(board).upper()} to play. Reply in this thread with the full sequence of moves "
-                    "that solves it — your moves *and* your opponent's forced replies, in order, separated by spaces.\n"
-                    "Example: `Nf3 Nc6 Bb5`. Standard notation is fine — case, the `x` for captures, and `+`/`#` for "
-                    "check/mate don't need to be exact."
+                    f"*Daily Puzzle - {date_str}*\n"
+                    f"{self.whose_move(board).upper()} to play - find the winning line.\n"
+                    "Reply here with every move (yours *and* your opponent's), in order, e.g. `Nf3 Nc6 Bb5`.\n"
+                    "You'll get a DM telling you if you got it right."
                 ),
             )
             thread_ts = root['ts']
