@@ -15,6 +15,7 @@ from constants import (
     INDEX_HTML_PATH,
     MOVES_ACTION_ID,
     MOVES_BLOCK_ID,
+    PUBLIC_BASE_URL,
     SAN_TOKEN_RE,
     Submission,
 )
@@ -59,6 +60,13 @@ async def delete_submission(submission_id: int):
         raise HTTPException(status_code=404, detail="Submission not found or already inactive")
     return Response(status_code=200)
 
+@app.get('/puzzle-image/{puzzle_id}')
+async def puzzle_image(puzzle_id: str, w: int = 360):
+    puzzle = db.get_puzzle(puzzle_id)
+    if puzzle is None:
+        raise HTTPException(status_code=404, detail="Puzzle not found")
+    return Response(content=lichess.get_resized_puzzle_image(puzzle['fen'], w), media_type="image/png")
+
 @app.post('/slack/interactions')
 async def slack_interactions(request: Request):
     body = await verify_slack_request(request)
@@ -72,8 +80,8 @@ async def slack_interactions(request: Request):
 
             blocks = []
             if puzzle is not None:
-                image_link = lichess.get_image_link_from_fen(lichess.encode_fen_for_url(puzzle['fen']))
-                blocks.append({"type": "image", "image_url": image_link, "alt_text": "Puzzle position"})
+                image_url = f"{PUBLIC_BASE_URL}/puzzle-image/{puzzle_id}?w=260"
+                blocks.append({"type": "image", "image_url": image_url, "alt_text": "Puzzle position"})
             blocks.append(
                 {
                     "type": "input",
@@ -82,7 +90,7 @@ async def slack_interactions(request: Request):
                     "element": {
                         "type": "plain_text_input",
                         "action_id": MOVES_ACTION_ID,
-                        "placeholder": {"type": "plain_text", "text": "Nf3 Nc6 Bb5"},
+                        "placeholder": {"type": "plain_text", "text": "e.g. Nf3 Nc6 Bb5"},
                     },
                 }
             )

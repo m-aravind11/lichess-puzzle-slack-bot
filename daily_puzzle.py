@@ -3,13 +3,14 @@ import logging
 import os
 from datetime import datetime
 import requests
+from PIL import Image
 
 import chess.pgn
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
-from constants import ACTION_OPEN_ANSWER_MODAL
+from constants import ACTION_OPEN_ANSWER_MODAL, PUBLIC_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,19 @@ class LichessDailyPuzzle:
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
 
+    def get_resized_puzzle_image(self, fen: str, width: int) -> bytes:
+        image_link = self.get_image_link_from_fen(self.encode_fen_for_url(fen))
+        response = requests.get(image_link)
+        response.raise_for_status()
+
+        image = Image.open(io.BytesIO(response.content))
+        height = round(image.height * width / image.width)
+        image = image.resize((width, height))
+
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
     def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
@@ -141,20 +155,20 @@ class LichessDailyPuzzle:
         daily_puzzle = self.get_lichess_daily_puzzle()
         pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
         fen = self.get_fen_from_pgn(pgn)
-        encoded_fen = self.encode_fen_for_url(fen)
+        puzzle_id = daily_puzzle['puzzle']['id']
 
         today = datetime.now()
         thread_ts = self.send_puzzle_to_slack(
             self.get_board_from_fen(fen),
             today.strftime("%B %d, %Y"),
-            daily_puzzle['puzzle']['id'],
-            self.get_image_link_from_fen(encoded_fen),
+            puzzle_id,
+            f"{PUBLIC_BASE_URL}/puzzle-image/{puzzle_id}?w=360",
         )
 
         san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
 
         db.save_puzzle(
-            puzzle_id=daily_puzzle['puzzle']['id'],
+            puzzle_id=puzzle_id,
             date=today.strftime("%Y-%m-%d"),
             fen=fen,
             solution=san_solution,
