@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import time
 from datetime import datetime
 import requests
 
@@ -74,6 +75,10 @@ class LichessDailyPuzzle:
         messages = history.get('messages', [])
         return messages[0]['ts'] if messages else None
 
+    def _post_thread_reply_with_retry(self, slack_client: WebClient, thread_ts: str, text: str) -> None:
+        time.sleep(4)  # give Slack a moment to finish processing the file share before threading onto it
+        slack_client.chat_postMessage(channel=self.SLACK_CHANNEL_ID, thread_ts=thread_ts, text=text)
+
     def send_puzzle_to_slack(self,board) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
@@ -88,10 +93,8 @@ class LichessDailyPuzzle:
 
             thread_ts = self._get_latest_message_ts(slack_client)
             if thread_ts:
-                slack_client.chat_postMessage(
-                    channel=self.SLACK_CHANNEL_ID,
-                    thread_ts=thread_ts,
-                    text="Reply in this thread with your solution (e.g. Nf3 Nc6 Bb5).",
+                self._post_thread_reply_with_retry(
+                    slack_client, thread_ts, "Reply in this thread with your solution (e.g. Nf3 Nc6 Bb5)."
                 )
             else:
                 logger.error("Could not find message ts in upload response, replies won't be trackable")
