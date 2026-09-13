@@ -74,13 +74,6 @@ def get_puzzle(puzzle_id: str) -> dict | None:
         return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
 
 
-def has_submitted(puzzle_id: str, user_id: str) -> bool:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(queries.HAS_SUBMITTED, (puzzle_id, user_id))
-        return cur.fetchone() is not None
-
-
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool) -> bool:
     """Returns False if the user already has an active submission for this puzzle (no-op), True if recorded."""
     with get_connection() as conn:

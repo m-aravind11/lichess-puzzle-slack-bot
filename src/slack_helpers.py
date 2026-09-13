@@ -16,14 +16,24 @@ def dm(slack_client: WebClient, user_id: str, text: str) -> None:
         logger.error("Full response: %s", e.response.data)
 
 
-def get_display_name(slack_client: WebClient, user_id: str) -> str:
+def get_display_names(slack_client: WebClient) -> dict:
+    """Resolves Slack user ids to display names via users.list (paginated) - one or a
+    few calls for the whole workspace roster, rather than one users.info call per
+    leaderboard row, which is what made an earlier version of this risk timing out."""
+    names = {}
+    cursor = None
     try:
-        info = slack_client.users_info(user=user_id)
-        profile = info['user'].get('profile', {})
-        return profile.get('display_name') or profile.get('real_name') or info['user'].get('name') or user_id
+        while True:
+            response = slack_client.users_list(cursor=cursor, limit=200)
+            for member in response['members']:
+                profile = member.get('profile', {})
+                names[member['id']] = profile.get('display_name') or profile.get('real_name') or member.get('name') or member['id']
+            cursor = response.get('response_metadata', {}).get('next_cursor')
+            if not cursor:
+                break
     except SlackApiError as e:
-        logger.error("Could not fetch display name for %s: %s", user_id, e.response['error'])
-        return user_id
+        logger.error("Could not fetch user list: %s", e.response['error'])
+    return names
 
 
 def format_seconds(seconds: float | None) -> str:
@@ -43,12 +53,13 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool) -> str:
     return f"{puzzle_link}\nYou answered: `{submitted_text}`\n{result_text}"
 
 
-def format_leaderboard(board: list) -> str:
+def format_leaderboard(board: list, names: dict | None = None) -> str:
+    names = names or {}
     columns = ["#", "Name", "Correct", "Incorrect", "Attempted", "Avg Time"]
     rows = [
         [
             str(i + 1),
-            row["user_name"] or row["user_id"],
+            names.get(row["user_id"], row["user_id"]),
             str(row["correct"]),
             str(row["incorrect"]),
             str(row["attempted"]),

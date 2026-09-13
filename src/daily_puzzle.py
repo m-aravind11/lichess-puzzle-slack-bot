@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 class Constants:
     LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
-    LICHESS_PUZZLE_SOLUTION_URL = "https://lichess.org/api/puzzle/"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
 
 class LichessDailyPuzzle:
@@ -26,9 +25,6 @@ class LichessDailyPuzzle:
     def get_lichess_daily_puzzle(self) -> dict:
         return requests.get(Constants.LICHESS_DAILY_PUZZLE_URL).json()
     
-    def get_solution(self, puzzle_id:str) -> list:
-        return requests.get(Constants.LICHESS_PUZZLE_SOLUTION_URL+puzzle_id).json()['puzzle']['solution']
-         
     def get_pgn_from_daily_puzzle(self,daily_puzzle: dict) -> str:
         return daily_puzzle['game']['pgn']
 

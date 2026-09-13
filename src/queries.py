@@ -9,10 +9,6 @@ GET_LATEST_PUZZLE = "SELECT * FROM puzzles WHERE active = 1 ORDER BY date DESC L
 
 GET_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 
-HAS_SUBMITTED = """
-    SELECT 1 FROM submissions WHERE puzzle_id = ? AND user_id = ? AND active = 1
-"""
-
 INSERT_SUBMISSION = """
     INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, submitted_at, active)
     VALUES (?, ?, ?, ?, ?, ?, 1)

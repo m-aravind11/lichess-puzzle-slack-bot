@@ -6,11 +6,11 @@ there's a leaderboard.
 
 ## How it works
 
-1. `POST /send_puzzle` (or the `/cron/send-puzzle` cron) fetches the day's
-   puzzle from Lichess and posts one Slack message: the board image (linked
-   straight from [chessvision.ai](https://fen2image.chessvision.ai), no
-   upload needed) plus a "Submit Answer" button. The puzzle's FEN, solution,
-   and this message's `ts` are saved to the DB, keyed by puzzle id.
+1. The `/cron/send-puzzle` cron fetches the day's puzzle from Lichess and
+   posts one Slack message: the board image (linked straight from
+   [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus
+   a "Submit Answer" button. The puzzle's FEN, solution, and this message's
+   `ts` are saved to the DB, keyed by puzzle id.
 2. Clicking the button opens a modal (`POST /slack/interactions`). Submitting
    it checks the moves against the solution, records the submission, and DMs
    the result. A correct answer also gets a "solved it in M:SS" reply posted
@@ -23,16 +23,23 @@ Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
 
 ## Files
 
+Application code lives under `src/`; `app.py` at the repo root is a thin
+shim that loads `src/app.py` and re-exports its FastAPI instance, since
+Vercel's zero-config Python detection looks for `app.py` at the project root.
+
 | File | What it does |
 |---|---|
-| `app.py` | FastAPI routes |
-| `daily_puzzle.py` | Lichess API + Slack posting, move parsing/verification |
-| `db.py` | Query layer (Turso/libSQL) |
-| `queries.py` | Raw SQL used by `db.py` |
-| `migrations.py` | Schema migrations |
-| `constants.py` | Shared constants and request models |
-| `slack_helpers.py` | Slack API helpers (DM, display name, message formatting) |
-| `slack_verify.py` | Verifies Slack request signatures |
+| `app.py` | Root shim for Vercel - re-exports `src/app.py`'s `app` |
+| `src/app.py` | FastAPI routes |
+| `src/daily_puzzle.py` | Lichess API + Slack posting, move parsing/verification |
+| `src/db.py` | Query layer (Turso/libSQL) |
+| `src/queries.py` | Raw SQL used by `db.py` |
+| `src/migrations.py` | Schema migrations |
+| `src/constants.py` | Shared constants |
+| `src/slack_helpers.py` | Slack API helpers (DM, message formatting) |
+| `src/slack_verify.py` | Verifies Slack request signatures |
+| `src/static/index.html` | Status page served at `GET /` |
+| `tests/` | Pytest suite (currently: `check_answer` move-parsing tolerance) |
 | `manifest.json` | Slack app manifest - paste into the App Manifest tab at api.slack.com/apps |
 
 ## Storage
@@ -41,8 +48,8 @@ Turso (hosted libSQL) via `turso-serverless`, not a local SQLite file - Vercel's
 serverless functions have a read-only filesystem outside `/tmp`, and `/tmp`
 doesn't persist between invocations.
 
-Migrations are idempotent functions in `migrations.py`, tracked by name in a
-`schema_migrations` table, and run automatically by `db.init_db()`.
+Migrations are idempotent functions in `src/migrations.py`, tracked by name in
+a `schema_migrations` table, and run automatically by `db.init_db()`.
 
 ## Environment variables
 
@@ -69,25 +76,34 @@ in your host in the two URLs, and reinstall the app. It sets:
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | Status page |
-| `POST /send_puzzle` | Fetches and posts the daily puzzle |
-| `GET /cron/send-puzzle` | Same, gated by `CRON_SECRET` - what Vercel's cron actually hits (see `vercel.json`) |
+| `GET /cron/send-puzzle` | Fetches and posts the daily puzzle, gated by `CRON_SECRET` - what Vercel's cron actually hits (see `vercel.json`) |
 | `POST /slack/interactions` | Opens the answer modal, handles its submission |
 | `POST /slack/leaderboard` | Slash command - posts the leaderboard |
 | `DELETE /submissions/{id}` | Soft-deletes a submission by id |
-| `POST /submit` | Old standalone endpoint - checks moves against a given puzzle id directly via the Lichess API. Not used by the Slack flow. |
 
 ## Local development
 
 ```
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 export LICHESS_OAUTH_TOKEN=xoxb-...
 export SLACK_CHANNEL_ID=...
 export SLACK_SIGNING_SECRET=...
 export TURSO_DATABASE_URL=libsql://...
 export TURSO_AUTH_TOKEN=...
-uvicorn app:app --reload
+uvicorn app:app --reload --app-dir src
 ```
 
 Slack needs a public HTTPS URL for `/slack/interactions` and
 `/slack/leaderboard` - use ngrok locally and point the Slack app's Request
 URLs at it.
+
+## Tests
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+`tests/conftest.py` puts `src/` on `sys.path` and sets dummy credentials so
+`daily_puzzle` (and the `db` module it imports) can be imported without a
+real Turso/Slack connection.
