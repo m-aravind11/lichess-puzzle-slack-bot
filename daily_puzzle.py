@@ -69,13 +69,10 @@ class LichessDailyPuzzle:
                 if chunk:
                     f.write(chunk)
 
-    def _extract_message_ts(self, upload_response: dict) -> str | None:
-        shares = upload_response.get('file', {}).get('shares', {})
-        for visibility in ('public', 'private'):
-            channel_shares = shares.get(visibility, {}).get(self.SLACK_CHANNEL_ID)
-            if channel_shares:
-                return channel_shares[0]['ts']
-        return None
+    def _get_latest_message_ts(self, slack_client: WebClient) -> str | None:
+        history = slack_client.conversations_history(channel=self.SLACK_CHANNEL_ID, limit=1)
+        messages = history.get('messages', [])
+        return messages[0]['ts'] if messages else None
 
     def send_puzzle_to_slack(self,board) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
@@ -89,7 +86,7 @@ class LichessDailyPuzzle:
             logger.info("Puzzle posted: %s", response)
             assert response["file"]  # the uploaded file
 
-            thread_ts = self._extract_message_ts(response)
+            thread_ts = self._get_latest_message_ts(slack_client)
             if thread_ts:
                 slack_client.chat_postMessage(
                     channel=self.SLACK_CHANNEL_ID,

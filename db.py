@@ -41,6 +41,9 @@ def init_db() -> None:
                 UNIQUE(puzzle_id, user_id)
             )
         """)
+        existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(puzzles)")}
+        if "slack_ts" not in existing_columns:
+            conn.execute("ALTER TABLE puzzles ADD COLUMN slack_ts TEXT")
 
 
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
