@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 from datetime import datetime
 import requests
@@ -8,6 +9,8 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
+
+logger = logging.getLogger(__name__)
 
 class Constants:
     LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
@@ -66,22 +69,42 @@ class LichessDailyPuzzle:
                 if chunk:
                     f.write(chunk)
 
-    def send_puzzle_to_slack(self,board) -> None:
+    def _extract_message_ts(self, upload_response: dict) -> str | None:
+        shares = upload_response.get('file', {}).get('shares', {})
+        for visibility in ('public', 'private'):
+            channel_shares = shares.get(visibility, {}).get(self.SLACK_CHANNEL_ID)
+            if channel_shares:
+                return channel_shares[0]['ts']
+        return None
+
+    def send_puzzle_to_slack(self,board) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
 
         try:
             filepath="./{}".format(self.puzzle_filename)
             response = slack_client.files_upload_v2(
-                channel=self.SLACK_CHANNEL_ID, 
-                file=filepath, 
+                channel=self.SLACK_CHANNEL_ID,
+                file=filepath,
                 initial_comment="{} to play".format(self.whose_move(board).upper()))
-            print (response)
+            logger.info("Puzzle posted: %s", response)
             assert response["file"]  # the uploaded file
+
+            thread_ts = self._extract_message_ts(response)
+            if thread_ts:
+                slack_client.chat_postMessage(
+                    channel=self.SLACK_CHANNEL_ID,
+                    thread_ts=thread_ts,
+                    text="Reply in this thread with your solution (e.g. Nf3 Nc6 Bb5).",
+                )
+            else:
+                logger.error("Could not find message ts in upload response, replies won't be trackable")
+            return thread_ts
         except SlackApiError as e:
             # You will get a SlackApiError if "ok" is False
             assert e.response["ok"] is False
             assert e.response["error"]  # str like 'invalid_auth', 'channel_not_found'
-            print(f"Got an error: {e.response['error']}")
+            logger.error("Got an error: %s", e.response['error'])
+            return None
 
     async def handle_puzzle_generation_and_sending(self) -> None:
         daily_puzzle = self.get_lichess_daily_puzzle()
@@ -92,11 +115,12 @@ class LichessDailyPuzzle:
         self.puzzle_filename = Constants.PUZZLE_IMAGE_FILENAME_TEMPLATE.format(datetime.now().strftime("%Y-%m-%d"))
 
         self.save_puzzle_image(self.get_image_link_from_fen(encoded_fen), self.puzzle_filename)
-        self.send_puzzle_to_slack(self.get_board_from_fen(fen))
+        thread_ts = self.send_puzzle_to_slack(self.get_board_from_fen(fen))
 
         db.save_puzzle(
             puzzle_id=daily_puzzle['puzzle']['id'],
             date=datetime.now().strftime("%Y-%m-%d"),
             fen=fen,
             solution=daily_puzzle['puzzle']['solution'],
+            slack_ts=thread_ts,
         )
