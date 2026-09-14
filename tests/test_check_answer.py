@@ -16,29 +16,28 @@ def fen_after(*san_moves: str) -> str:
 
 
 def test_exact_match():
-    assert lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["e4", "e5", "Nf3"])
+    assert lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["e4", "Nf3"])
 
 
 def test_wrong_moves_return_false():
-    assert not lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["d4", "d5", "Nf3"])
+    assert not lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["d4", "Nf3"])
 
 
 @pytest.mark.parametrize("submitted", [
-    ["e4", "e5", "nf3"],
-    ["E4", "E5", "NF3"],
-    ["e4", "e5", "nF3"],
+    ["e4", "nf3"],
+    ["E4", "NF3"],
+    ["e4", "nF3"],
 ])
 def test_case_insensitive(submitted):
     assert lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], submitted)
 
 
 def test_missing_check_and_mate_suffixes():
-    # Fool's mate: 1. f3 e5 2. g4 Qh4# - solution as produced by convert_uci_solution_to_san
-    # includes the '#', submitted answers shouldn't be required to include it.
-    solution = ["f3", "e5", "g4", "Qh4#"]
-    assert lp.check_answer(START_FEN, solution, ["f3", "e5", "g4", "Qh4"])
-    assert lp.check_answer(START_FEN, solution, ["f3", "e5", "g4", "qh4#"])
-    assert lp.check_answer(START_FEN, solution, ["f3", "e5", "g4", "qh4"])
+    fen = fen_after("f3", "e5", "g4")
+    solution = ["Qh4#"]
+    assert lp.check_answer(fen, solution, ["Qh4"])
+    assert lp.check_answer(fen, solution, ["qh4#"])
+    assert lp.check_answer(fen, solution, ["qh4"])
 
 
 def test_missing_capture_x():
@@ -52,7 +51,6 @@ def test_asterisk_as_capture_marker():
 
 
 def test_capture_with_x_and_lowercase_piece():
-    # A piece capture, not just a pawn capture: after 1. e4 e5 2. Nf3 Nc6 3. Nxe5
     fen = fen_after("e4", "e5", "Nf3", "Nc6")
     assert lp.check_answer(fen, ["Nxe5"], ["nxe5"])
     assert lp.check_answer(fen, ["Nxe5"], ["ne5"])
@@ -79,4 +77,4 @@ def test_garbage_token_returns_false_not_error():
 
 
 def test_wrong_move_count_returns_false():
-    assert not lp.check_answer(START_FEN, ["e4", "e5"], ["e4"])
+    assert not lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["e4"])

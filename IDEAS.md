@@ -37,3 +37,14 @@ hasn't submitted yet.
 ## Achievements
 Badges like "10-correct streak" or "fastest solve this week" - depends on
 streaks and/or weekly leaderboard existing first.
+
+## Interactive board (lichess-style)
+Slack Block Kit can't render a drag/drop chessboard, so the modal's plain
+text input is the ceiling for in-Slack solving. A closer-to-lichess.org
+experience would need a separate hosted mini web app (chessground/chess.js)
+opened via a link button instead of the modal: it auto-plays the opponent's
+moves like lichess's own trainer, lets the user drag their own, then POSTs
+the result back to a new bot endpoint which records it and posts to Slack.
+Needs session linking between the Slack click and the web page (puzzle_id +
+a short-lived token in the URL) and hosting for the static app + endpoint -
+a real new service, not a modal tweak.

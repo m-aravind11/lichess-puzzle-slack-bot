@@ -38,7 +38,7 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: in
         f"That's correct - nice work! +{score} points" if correct
         else f"Not quite. The solution was: `{' '.join(puzzle['solution'])}`"
     )
-    return f"{puzzle_link}\nYou answered: `{submitted_text}`\n{result_text}"
+    return f"{puzzle_link}\nYour moves: `{submitted_text}`\n{result_text}"
 
 
 def format_leaderboard(board: list) -> str:

@@ -87,26 +87,29 @@ class LichessDailyPuzzle:
         return token
 
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
-        """Tolerant of a missing/'*' capture marker, letter case, and check/mate suffixes -
-        e.g. Qe2, Qxe2, Q*e2 and qxe2# all resolve to the same move when legal."""
-        board = self.get_board_from_fen(fen)
-        try:
-            submitted_uci = []
-            for token in submitted_moves:
-                move = board.parse_san(self._normalize_san_token(token))
-                submitted_uci.append(move.uci())
-                board.push(move)
+        """submitted_moves = player's own moves only (san_solution[0::2]); opponent
+        replies (odd indices) come from san_solution itself, never from the user -
+        Lichess's solution only records one of possibly several valid replies.
+        Tolerant of a missing/'*' capture marker, case, and check/mate suffixes."""
+        expected_player_move_count = len(san_solution[0::2])
+        if len(submitted_moves) != expected_player_move_count:
+            return False
 
-            solution_board = self.get_board_from_fen(fen)
-            solution_uci = []
-            for san in san_solution:
-                move = solution_board.parse_san(san)
-                solution_uci.append(move.uci())
-                solution_board.push(move)
+        board = self.get_board_from_fen(fen)
+        submitted_iter = iter(submitted_moves)
+        try:
+            for ply, san in enumerate(san_solution):
+                solution_move = board.parse_san(san)
+                if ply % 2 == 0:
+                    token = next(submitted_iter)
+                    submitted_move = board.parse_san(self._normalize_san_token(token))
+                    if submitted_move != solution_move:
+                        return False
+                board.push(solution_move)
         except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError):
             return False
 
-        return submitted_uci == solution_uci
+        return True
 
     def encode_fen_for_url(self,fen: str) -> str:
         return fen.replace("/", "%2F").replace(" ", "%20")
