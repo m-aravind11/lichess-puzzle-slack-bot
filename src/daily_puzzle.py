@@ -15,7 +15,10 @@ from constants import ACTION_OPEN_ANSWER_MODAL
 logger = logging.getLogger(__name__)
 
 class Constants:
-    LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
+    # /api/puzzle/next?difficulty=easiest (anonymous) skews puzzle rating to
+    # roughly 800-950 - an easier on-ramp than the official daily puzzle,
+    # which can land at any rating.
+    LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle=mix&difficulty=easiest"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
     FETCH_RETRIES = 2
     FETCH_RETRY_DELAY_SECONDS = 3
