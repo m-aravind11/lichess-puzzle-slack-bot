@@ -1,11 +1,13 @@
 import contextvars
 import json
 import logging
+import os
 import uuid
 from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from slack_sdk import WebClient
 
 import db
@@ -34,6 +36,7 @@ for _handler in logging.root.handlers:
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory=os.path.dirname(INDEX_HTML_PATH)), name="static")
 lichess = LichessDailyPuzzle()
 slack_client = WebClient(token=lichess.LICHESS_OAUTH_TOKEN)
 

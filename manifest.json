@@ -13,8 +13,7 @@
         "scopes": {
             "bot": [
                 "chat:write",
-                "im:write",
-                "users:read"
+                "im:write"
             ]
         }
     },

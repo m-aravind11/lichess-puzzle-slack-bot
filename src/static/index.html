@@ -6,45 +6,49 @@
 <title>Lichess Puzzle Bot</title>
 <style>
   :root {
-    --bg: #f3f1ea;
+    --bg: #f2f1ec;
+    --bg-2: #e8e6db;
     --surface: #ffffff;
-    --surface-2: #ecf3ee;
+    --surface-2: #eef0f4;
     --fg: #1c1c1a;
     --muted: #656356;
-    --border: #ddd8c8;
-    --accent: #2f6b4f;
-    --accent-strong: #1f4d38;
-    --accent-soft: #dfeee5;
-    --square-a: #f3efe0;
-    --square-b: #2f6b4f;
+    --border: #ddd9cd;
+    --accent: #3d5a80;
+    --accent-strong: #293f5c;
+    --accent-soft: #e2e8f0;
+    --square-a: #f0ece0;
+    --square-b: #8b5a3c;
     --shadow: 0 1px 2px rgba(30, 25, 10, 0.05), 0 10px 28px rgba(30, 25, 10, 0.08);
+    --shadow-lg: 0 2px 4px rgba(30, 25, 10, 0.06), 0 20px 44px rgba(30, 25, 10, 0.10);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #121210;
-      --surface: #1e1d17;
-      --surface-2: #172019;
-      --fg: #f1eee2;
-      --muted: #a6a394;
-      --border: #38352a;
-      --accent: #6fc290;
-      --accent-strong: #8fd6ac;
-      --accent-soft: #1c2c22;
-      --square-a: #2a2818;
-      --square-b: #3f7a58;
+      --bg: #14161a;
+      --bg-2: #191c21;
+      --surface: #1d2026;
+      --surface-2: #1a1e26;
+      --fg: #edeee8;
+      --muted: #9a9c9e;
+      --border: #33373f;
+      --accent: #7c9ac0;
+      --accent-strong: #a3bedb;
+      --accent-soft: #232c38;
+      --square-a: #262320;
+      --square-b: #9c6a45;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.4), 0 24px 50px rgba(0, 0, 0, 0.45);
     }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: var(--bg);
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, var(--bg-2), var(--bg));
     color: var(--fg);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    padding: 44px 20px 60px;
+    padding: 56px 20px 60px;
   }
   main {
-    max-width: 620px;
+    max-width: 640px;
     margin: 0 auto;
   }
 
@@ -53,10 +57,10 @@
     position: relative;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 18px;
-    box-shadow: var(--shadow);
-    padding: 28px 28px 26px;
-    margin-bottom: 36px;
+    border-radius: 20px;
+    box-shadow: var(--shadow-lg);
+    padding: 34px 32px 30px;
+    margin-bottom: 40px;
     overflow: hidden;
   }
   .hero::before {
@@ -69,26 +73,27 @@
   .hero-top {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 18px;
+    gap: 18px;
+    margin-bottom: 20px;
   }
   .board-icon {
-    width: 46px;
-    height: 46px;
-    border-radius: 11px;
+    width: 52px;
+    height: 52px;
+    border-radius: 13px;
     flex-shrink: 0;
     background-color: var(--square-a);
     background-image:
       linear-gradient(45deg, var(--square-b) 25%, transparent 25%, transparent 75%, var(--square-b) 75%),
       linear-gradient(45deg, var(--square-b) 25%, transparent 25%, transparent 75%, var(--square-b) 75%);
-    background-size: 23px 23px;
-    background-position: 0 0, 11.5px 11.5px;
-    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+    background-size: 26px 26px;
+    background-position: 0 0, 13px 13px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08), var(--shadow);
   }
   h1 {
-    font-size: 1.55rem;
+    font-size: 1.7rem;
     margin: 0;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
+    font-weight: 750;
   }
   .status {
     display: inline-flex;
@@ -100,19 +105,20 @@
     background: var(--accent-soft);
     padding: 3px 10px 3px 8px;
     border-radius: 999px;
-    margin-top: 6px;
+    margin-top: 8px;
   }
   .dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .tagline {
     color: var(--muted);
-    line-height: 1.6;
+    line-height: 1.65;
     margin: 0;
-    font-size: 1rem;
+    font-size: 1.02rem;
   }
   .tagline a { color: var(--accent-strong); text-decoration: none; border-bottom: 1px solid currentColor; }
 
@@ -123,14 +129,25 @@
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--muted);
-    margin: 0 0 14px;
+    margin: 0 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
+  h2.eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  section { margin-bottom: 40px; }
+  section:last-of-type { margin-bottom: 28px; }
 
   /* ---- steps ---- */
   .steps {
     display: grid;
     gap: 10px;
-    margin-bottom: 36px;
   }
   .step {
     display: flex;
@@ -139,8 +156,8 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
-    border-radius: 10px;
-    padding: 14px 16px;
+    border-radius: 12px;
+    padding: 15px 17px;
     box-shadow: var(--shadow);
   }
   .step-num {
@@ -171,71 +188,102 @@
     font-size: 0.88em;
   }
 
-  /* ---- mock conversation ---- */
-  .thread {
+  /* ---- screenshot carousel ---- */
+  .carousel {
+    position: relative;
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 18px;
+    border-radius: 16px;
     box-shadow: var(--shadow);
-    margin-bottom: 12px;
+    overflow: hidden;
   }
-  .msg {
+  .car-track {
     display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    margin-bottom: 14px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
   }
-  .msg:last-child { margin-bottom: 0; }
-  .avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 8px;
-    flex-shrink: 0;
+  .car-track::-webkit-scrollbar { display: none; }
+  .car-slide {
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    display: flex;
+    flex-direction: column;
+  }
+  .car-slide img {
+    display: block;
+    width: 100%;
+    max-height: 440px;
+    object-fit: contain;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .car-caption {
+    padding: 12px 20px 16px;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    color: var(--muted);
+    text-align: center;
+  }
+  .car-caption strong { color: var(--fg); }
+  .car-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--fg);
+    font-size: 1.2rem;
+    line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
-    color: #fff;
-    box-shadow: var(--shadow);
+    cursor: pointer;
+    z-index: 2;
   }
-  .avatar.bot { background: var(--accent); }
-  .avatar.user { background: #7a8ca8; }
-  .bubble {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 9px 13px;
-    font-size: 0.88rem;
-    line-height: 1.5;
-    box-shadow: var(--shadow);
+  .car-btn:hover { background: var(--accent-soft); }
+  .car-btn.prev { left: 10px; }
+  .car-btn.next { right: 10px; }
+  .car-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 4px 0 16px;
   }
-  .bubble .who {
-    font-weight: 700;
-    font-size: 0.78rem;
-    color: var(--accent-strong);
-    margin-bottom: 2px;
+  .car-dot {
+    width: 7px;
+    height: 7px;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: var(--border);
+    cursor: pointer;
   }
-  .bubble code {
-    background: var(--accent-soft);
-    color: var(--accent-strong);
-    padding: 1px 6px;
-    border-radius: 5px;
-    font-size: 0.92em;
+  .car-dot.active { width: 20px; background: var(--accent); }
+
+  @media (max-width: 460px) {
+    .car-slide img { max-height: 320px; }
+    .car-btn { width: 32px; height: 32px; font-size: 1.05rem; }
   }
 
   footer {
     color: var(--muted);
     font-size: 0.85rem;
     text-align: center;
-    padding-top: 20px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
   }
 
   @media (max-width: 420px) {
-    body { padding: 28px 14px 48px; }
-    .hero { padding: 22px 20px 20px; }
-    .board-icon { width: 40px; height: 40px; }
-    h1 { font-size: 1.35rem; }
+    body { padding: 32px 14px 48px; }
+    .hero { padding: 24px 20px 22px; }
+    .board-icon { width: 42px; height: 42px; }
+    h1 { font-size: 1.4rem; }
+    section { margin-bottom: 32px; }
   }
 </style>
 </head>
@@ -251,51 +299,92 @@
     </div>
     <p class="tagline">
       Posts the <a href="https://lichess.org/training/daily">Lichess daily puzzle</a> to Slack every day,
-      checks thread replies against the solution, and keeps a running leaderboard of who's solving them.
+      scores your submitted line against the solution, and keeps a running leaderboard of who's solving them.
     </p>
   </div>
 
-  <h2 class="eyebrow">How it works</h2>
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <p>The daily puzzle is posted to the channel as a new thread, with the position shown as an image.</p>
+  <section>
+    <h2 class="eyebrow">How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <p>The daily puzzle is posted to the channel with the position shown as an image and a <strong>Submit Answer</strong> button.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <p>Click the button and enter the full line in the popup, e.g. <code>Nf3 Nc6 Bb5</code> - your moves and your opponent's forced replies, in order.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <p>You get a DM with the result. Solve it correctly and a note is posted in the thread; the leaderboard is posted to the channel on its own schedule.</p>
+      </div>
     </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <p>Reply in that thread with the full line, e.g. <code>Nf3 Nc6 Bb5</code> - your moves and your opponent's forced replies, in order.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <p>You get a DM with the result. Run <code>/leaderboard</code> anywhere in the workspace to see current standings.</p>
-    </div>
-  </div>
+  </section>
 
-  <h2 class="eyebrow">What it looks like</h2>
-  <div class="thread">
-    <div class="msg">
-      <div class="avatar bot">&#9822;</div>
-      <div class="bubble">
-        <div class="who">Puzzle Bot</div>
-        White to play - find the winning line. Reply here with every move.
+  <section>
+    <h2 class="eyebrow">What it looks like</h2>
+    <div class="carousel">
+      <button class="car-btn prev" id="carPrev" aria-label="Previous screenshot">&#8249;</button>
+      <div class="car-track" id="carTrack">
+        <div class="car-slide">
+          <img src="/static/slack-message.png" alt="Puzzle posted to Slack with a Submit Answer button">
+          <div class="car-caption"><strong>1. Puzzle posted</strong><br>Position image + Submit Answer button.</div>
+        </div>
+        <div class="car-slide">
+          <img src="/static/thread-reply.png" alt="Bot announcing a correct solve in the thread">
+          <div class="car-caption"><strong>2. Solved in thread</strong><br>Correct solves get called out publicly.</div>
+        </div>
+        <div class="car-slide">
+          <img src="/static/dm.png" alt="DM confirming the submitted line was correct">
+          <div class="car-caption"><strong>3. Result by DM</strong><br>Your line and score, sent privately.</div>
+        </div>
       </div>
+      <button class="car-btn next" id="carNext" aria-label="Next screenshot">&#8250;</button>
     </div>
-    <div class="msg">
-      <div class="avatar user">A</div>
-      <div class="bubble"><code>Qxf7#</code></div>
+    <div class="car-dots" id="carDots">
+      <button class="car-dot active" data-index="0" aria-label="Go to slide 1"></button>
+      <button class="car-dot" data-index="1" aria-label="Go to slide 2"></button>
+      <button class="car-dot" data-index="2" aria-label="Go to slide 3"></button>
     </div>
-    <div class="msg">
-      <div class="avatar bot">&#9822;</div>
-      <div class="bubble">
-        <div class="who">Puzzle Bot &middot; DM</div>
-        You answered: <code>Qxf7#</code><br>That's correct - nice work!
-      </div>
-    </div>
-  </div>
+  </section>
 
   <footer>
     This is a backend service - there's nothing else to do here. Interact with it from Slack.
   </footer>
 </main>
+<script>
+  (function () {
+    var track = document.getElementById('carTrack');
+    var dots = Array.prototype.slice.call(document.querySelectorAll('.car-dot'));
+    var slideCount = dots.length;
+
+    function goTo(index) {
+      track.scrollTo({ left: index * track.clientWidth, behavior: 'smooth' });
+    }
+
+    document.getElementById('carPrev').addEventListener('click', function () {
+      var i = Math.round(track.scrollLeft / track.clientWidth);
+      goTo(Math.max(0, i - 1));
+    });
+    document.getElementById('carNext').addEventListener('click', function () {
+      var i = Math.round(track.scrollLeft / track.clientWidth);
+      goTo(Math.min(slideCount - 1, i + 1));
+    });
+    dots.forEach(function (dot) {
+      dot.addEventListener('click', function () {
+        goTo(parseInt(dot.dataset.index, 10));
+      });
+    });
+
+    var scrollTimeout;
+    track.addEventListener('scroll', function () {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(function () {
+        var i = Math.round(track.scrollLeft / track.clientWidth);
+        dots.forEach(function (dot, idx) { dot.classList.toggle('active', idx === i); });
+      }, 80);
+    });
+  })();
+</script>
 </body>
 </html>
