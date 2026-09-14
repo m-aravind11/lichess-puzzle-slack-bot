@@ -44,6 +44,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     t0 = time.monotonic()
     puzzle_id = payload['view']['private_metadata']
     user_id = payload['user']['id']
+    user_name = payload['user']['username']
     text = payload['view']['state']['values'][MOVES_BLOCK_ID][MOVES_ACTION_ID]['value'].strip()
     san_moves = text.split()
 
@@ -73,7 +74,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     # No separate has_submitted()/get_latest_puzzle() pre-checks - record_submission()
     # does both the staleness check and the duplicate check as part of the same insert,
     # since every extra round trip here eats into Slack's 3-second interaction budget.
-    result = db.record_submission(puzzle_id, user_id, user_id, text, correct, score)
+    result = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 
     if result == db.SUBMISSION_STALE_PUZZLE:
