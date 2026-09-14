@@ -12,10 +12,23 @@ there's a leaderboard.
    a "Submit Answer" button. The puzzle's FEN, solution, and this message's
    `ts` are saved to the DB, keyed by puzzle id.
 2. Clicking the button opens a modal (`POST /slack/interactions`). Submitting
-   it checks the moves against the solution, records the submission, and DMs
-   the result. A correct answer also gets a "solved it in M:SS" reply posted
-   in the puzzle's thread.
-3. `/leaderboard` posts current standings to the channel.
+   it checks the moves against the solution, scores it, records the
+   submission, and DMs the result. A correct answer also gets a "solved it in
+   M:SS (+N pts)" reply posted in the puzzle's thread.
+3. `/cron/send-leaderboard` posts current standings to the channel.
+
+## Scoring
+
+A correct answer is worth `MAX_SCORE` (10) points, decayed by how long after
+the puzzle was posted it was submitted - points halve every
+`HALF_LIFE_MINUTES` (120), so a solve 2 hours in is worth 5, 4 hours in worth
+2.5 (rounded), and so on. A wrong answer is worth 0. If the puzzle's post
+time can't be determined (no `slack_ts`, or a negative elapsed time from a
+stale repost), the submission gets full credit rather than being penalized
+for a measurement that isn't there. See `src/scoring.py`.
+
+The leaderboard ranks by total points, ties broken by fastest average solve
+time (correct answers only).
 
 Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
 `python-chess` and compares UCI move sequences instead of raw strings, so
@@ -31,6 +44,7 @@ Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
 | `src/daily_puzzle.py` | Lichess API + Slack posting, move parsing/verification |
 | `src/db.py` | Query layer (Turso/libSQL) |
 | `src/queries.py` | Raw SQL used by `db.py` |
+| `src/scoring.py` | Points calculation for a submission |
 | `src/migrations.py` | Schema migrations |
 | `src/constants.py` | Shared constants |
 | `src/slack_helpers.py` | Slack API helpers (DM, message formatting) |
@@ -75,21 +89,20 @@ curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrate \
 ## Slack app configuration
 
 Paste `manifest.json` into the App Manifest tab at api.slack.com/apps, swap
-in your host in the two URLs, and reinstall the app. It sets:
+in your host in the request URL, and reinstall the app. It sets:
 
-- Bot scopes: `chat:write`, `commands`, `im:write`, `users:read`
+- Bot scopes: `chat:write`, `im:write`, `users:read`
 - Interactivity, Request URL → `/slack/interactions`
-- Slash command `/leaderboard` → `/slack/leaderboard`
 
 ## Endpoints
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /` | Status page |
-| `GET /cron/send-puzzle` | Fetches and posts the daily puzzle, gated by `CRON_SECRET` - what Vercel's cron actually hits (see `vercel.json`) |
+| `GET /cron/send-puzzle` | Fetches and posts the daily puzzle, gated by `CRON_SECRET` - hit by the `vercel.json` cron |
+| `GET /cron/send-leaderboard` | Posts current standings to the channel, gated by `CRON_SECRET` - hit by the `vercel.json` cron |
 | `POST /admin/migrate` | Applies pending migrations, gated by `CRON_SECRET` - trigger manually after deploying a schema change |
 | `POST /slack/interactions` | Opens the answer modal, handles its submission |
-| `POST /slack/leaderboard` | Slash command - posts the leaderboard |
 | `DELETE /submissions/{id}` | Soft-deletes a submission by id |
 
 ## Local development
@@ -104,9 +117,8 @@ export TURSO_AUTH_TOKEN=...
 uvicorn app:app --reload --app-dir src
 ```
 
-Slack needs a public HTTPS URL for `/slack/interactions` and
-`/slack/leaderboard` - use ngrok locally and point the Slack app's Request
-URLs at it.
+Slack needs a public HTTPS URL for `/slack/interactions` - use ngrok
+locally and point the Slack app's Request URL at it.
 
 ## Tests
 
