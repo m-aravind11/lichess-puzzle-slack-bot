@@ -1,9 +1,4 @@
 {
-    "git": {
-        "deploymentEnabled": {
-            "master": false
-        }
-    },
     "crons": [
         {
             "path": "/cron/send-leaderboard",
