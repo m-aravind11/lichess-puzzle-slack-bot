@@ -67,12 +67,24 @@ def test_delete_submission_with_valid_token_calls_through(client, monkeypatch):
     db.deactivate_submission.assert_called_once_with(1)
 
 
-def test_unset_cron_secret_disables_auth_entirely(monkeypatch):
-    # Documents existing behavior: an unset/empty CRON_SECRET means every admin
-    # route is open to anyone. Not a change here - just pinning it so a future
-    # accidental unset in deployment config doesn't go unnoticed by the suite.
+@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
+def test_unset_cron_secret_fails_closed(method, path, monkeypatch):
+    # A misconfigured deploy (or an accidentally deleted env var) must reject
+    # every admin route, not wave every request through unauthenticated.
     monkeypatch.setattr(Security, "CRON_SECRET", None)
-    monkeypatch.setattr(db, "deactivate_submission", MagicMock(return_value=True))
+    monkeypatch.setattr(db, "deactivate_submission", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "deactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "reactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "init_db", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(
+        app_module.lichess, "handle_puzzle_generation_and_sending",
+        AsyncMock(side_effect=AssertionError("should not run")),
+    )
     client = TestClient(app_module.app)
-    response = client.delete("/submissions/1")
-    assert response.status_code == 200
+    response = client.request(method, path)
+    assert response.status_code == 401
+
+    # Even the (previously) correct bearer token can't work when there's no secret to check against.
+    response = client.request(method, path, headers={"Authorization": "Bearer s3cr3t"})
+    assert response.status_code == 401

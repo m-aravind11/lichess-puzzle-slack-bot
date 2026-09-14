@@ -51,7 +51,9 @@ async def assign_request_id(request: Request, call_next):
 
 
 def require_admin_auth(request: Request) -> None:
-    if Security.CRON_SECRET and request.headers.get('Authorization') != f'Bearer {Security.CRON_SECRET}':
+    # Fail closed: an unset CRON_SECRET (misconfigured deploy, accidentally
+    # deleted env var) must reject every admin request, not wave them all through.
+    if not Security.CRON_SECRET or request.headers.get('Authorization') != f'Bearer {Security.CRON_SECRET}':
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
 

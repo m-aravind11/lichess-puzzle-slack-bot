@@ -17,6 +17,8 @@ there's a points-based leaderboard.
    M:SS (+N pts)" reply posted in the puzzle's thread.
 3. `/cron/send-leaderboard` posts current standings to the channel.
 
+See [API.md](API.md) for the full HTTP API (routes, auth, params, responses).
+
 Storage is Turso (hosted libSQL), not a local SQLite file - Vercel's
 serverless functions have a read-only filesystem outside `/tmp`, and `/tmp`
 doesn't persist between invocations. Schema migrations live in
@@ -55,6 +57,7 @@ export SLACK_CHANNEL_ID=...
 export SLACK_SIGNING_SECRET=...
 export TURSO_DATABASE_URL=libsql://...
 export TURSO_AUTH_TOKEN=...
+export CRON_SECRET=...                  # any string; admin routes reject all requests without it
 uvicorn app:app --reload --app-dir src
 ```
 
