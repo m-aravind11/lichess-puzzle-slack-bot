@@ -117,19 +117,25 @@ class LichessDailyPuzzle:
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
 
-    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str,num_moves: int) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
+        move_label = "move" if num_moves == 1 else "moves"
 
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text=f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play.",
+                text=f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play, {num_moves} {move_label}.",
                 blocks=[
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play. \n\n Click *Submit Answer* (below the image) to record your response.",
+                            "text": (
+                                f"<!here> *Puzzle for the day ({date_str})*\n"
+                                f"`{self.whose_move(board).upper()} TO PLAY · {num_moves} {move_label.upper()}`\n\n"
+                                f"Click *Submit Answer* below and enter only your own moves, e.g. `Nf3 Bb5` "
+                                f"(your opponent's replies are added automatically). You'll get the result by DM."
+                            ),
                         },
                     },
                     {
@@ -162,6 +168,7 @@ class LichessDailyPuzzle:
             today.strftime("%B %d, %Y"),
             existing['puzzle_id'],
             self.get_image_link_from_fen(self.encode_fen_for_url(existing['fen'])),
+            len(existing['solution'][0::2]),
         )
         db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
 
@@ -179,6 +186,7 @@ class LichessDailyPuzzle:
             today.strftime("%B %d, %Y"),
             puzzle_id,
             self.get_image_link_from_fen(self.encode_fen_for_url(fen)),
+            len(san_solution[0::2]),
         )
         db.save_puzzle(
             puzzle_id=puzzle_id,

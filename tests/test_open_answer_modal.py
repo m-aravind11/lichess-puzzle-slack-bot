@@ -22,7 +22,7 @@ def test_label_shows_player_move_count(monkeypatch):
 
     interactions.open_answer_modal(slack_client, "trigger1", "p1")
 
-    assert _label(slack_client) == "This is a 3-move puzzle"
+    assert _label(slack_client) == "Your moves (3-move puzzle)"
 
 
 def test_label_for_one_move_puzzle(monkeypatch):
@@ -31,7 +31,7 @@ def test_label_for_one_move_puzzle(monkeypatch):
 
     interactions.open_answer_modal(slack_client, "trigger1", "p1")
 
-    assert _label(slack_client) == "This is a 1-move puzzle"
+    assert _label(slack_client) == "Your moves (1-move puzzle)"
 
 
 def test_label_falls_back_when_puzzle_not_found(monkeypatch):
@@ -49,7 +49,7 @@ def test_hint_explains_opponent_moves_are_automatic(monkeypatch):
 
     interactions.open_answer_modal(slack_client, "trigger1", "p1")
 
-    assert "taken from the puzzle automatically" in _hint(slack_client)
+    assert "added automatically" in _hint(slack_client)
 
 
 def test_private_metadata_still_carries_puzzle_id(monkeypatch):
