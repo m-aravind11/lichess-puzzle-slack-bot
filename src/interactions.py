@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 from datetime import datetime, timezone
 
 from fastapi import Response
@@ -43,14 +42,13 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
 
 def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle, payload: dict) -> dict | Response:
     t0 = time.monotonic()
-    req_id = uuid.uuid4().hex[:8]
     puzzle_id = payload['view']['private_metadata']
     user_id = payload['user']['id']
     text = payload['view']['state']['values'][MOVES_BLOCK_ID][MOVES_ACTION_ID]['value'].strip()
     san_moves = text.split()
 
     def log_timing(step: str) -> None:
-        logger.info("[timing %s] user=%s puzzle=%s %s: %.3fs", req_id, user_id, puzzle_id, step, time.monotonic() - t0)
+        logger.info("[timing] user=%s puzzle=%s %s: %.3fs", user_id, puzzle_id, step, time.monotonic() - t0)
 
     if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
         return {

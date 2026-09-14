@@ -1,5 +1,6 @@
 import functools
 import json
+import logging
 import os
 import queue
 from collections import defaultdict
@@ -10,6 +11,8 @@ import turso_serverless
 
 import migrations
 import queries
+
+logger = logging.getLogger(__name__)
 
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
@@ -37,8 +40,10 @@ def get_connection():
         # redeploy). Drop it instead of returning it to the pool - a poisoned
         # connection would fail the same way for every future invocation.
         stale = True
+        logger.warning("Pooled Turso connection is stale, evicting from pool")
         raise
     except Exception:
+        logger.exception("DB operation failed, rolling back")
         conn.rollback()
         raise
     finally:
@@ -55,6 +60,7 @@ def _retry_stale_connection(fn):
         try:
             return fn(*args, **kwargs)
         except turso_serverless.OperationalError:
+            logger.warning("Retrying %s after stale connection eviction", fn.__name__)
             return fn(*args, **kwargs)
     return wrapper
 
@@ -73,16 +79,27 @@ def init_db() -> None:
 def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
     """Creates the puzzle row the first time it's posted. A resend of the same
     puzzle_id (e.g. testing, a duplicate cron trigger) is a no-op, so existing
-    submissions stay timed against the original post rather than a later one."""
+    submissions stay timed against the original post rather than a later one.
+    puzzle_id is the primary key, so this also covers a resend after the row
+    was soft-deleted (deactivate_puzzle) - the active-only check above won't
+    see it, but the row's still there, and the plain INSERT would otherwise
+    hit an IntegrityError on that key instead of quietly no-op'ing like every
+    other resend does."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(queries.GET_ACTIVE_PUZZLE_BY_ID, (puzzle_id,))
         if cur.fetchone() is not None:
+            logger.info("save_puzzle: %s already active, no-op", puzzle_id)
             return
-        cur.execute(
-            queries.INSERT_PUZZLE,
-            (puzzle_id, date, fen, json.dumps(solution), slack_ts),
-        )
+        try:
+            cur.execute(
+                queries.INSERT_PUZZLE,
+                (puzzle_id, date, fen, json.dumps(solution), slack_ts),
+            )
+        except turso_serverless.IntegrityError:
+            logger.info("save_puzzle: %s already exists (likely deactivated), no-op", puzzle_id)
+            return
+        logger.info("save_puzzle: inserted %s (date=%s, slack_ts=%s)", puzzle_id, date, slack_ts)
 
 
 def _row_to_puzzle(row: dict) -> dict:
@@ -138,8 +155,18 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
                 (puzzle_id, user_id, user_name, moves, int(correct), score, datetime.now(timezone.utc).isoformat(), puzzle_id),
             )
         except turso_serverless.IntegrityError:
+            logger.info("record_submission: duplicate puzzle=%s user=%s", puzzle_id, user_id)
             return SUBMISSION_DUPLICATE
-        return SUBMISSION_RECORDED if cur.rowcount > 0 else SUBMISSION_STALE_PUZZLE
+
+        if cur.rowcount == 0:
+            logger.info("record_submission: stale puzzle=%s user=%s (no longer latest)", puzzle_id, user_id)
+            return SUBMISSION_STALE_PUZZLE
+
+        logger.info(
+            "record_submission: recorded puzzle=%s user=%s correct=%s score=%d",
+            puzzle_id, user_id, correct, score,
+        )
+        return SUBMISSION_RECORDED
 
 
 @_retry_stale_connection
@@ -148,7 +175,9 @@ def deactivate_submission(submission_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(queries.DEACTIVATE_SUBMISSION, (submission_id,))
-        return cur.rowcount > 0
+        deleted = cur.rowcount > 0
+        logger.info("deactivate_submission: id=%s -> %s", submission_id, "deleted" if deleted else "not found")
+        return deleted
 
 
 PUZZLE_DEACTIVATED = "deactivated"
@@ -167,10 +196,35 @@ def deactivate_puzzle(puzzle_id: str) -> str:
         cur = conn.cursor()
         cur.execute(queries.DEACTIVATE_PUZZLE_IF_NO_ACTIVE_SUBMISSIONS, (puzzle_id,))
         if cur.rowcount > 0:
+            logger.info("deactivate_puzzle: %s -> deactivated", puzzle_id)
             return PUZZLE_DEACTIVATED
 
         cur.execute(queries.GET_ACTIVE_PUZZLE_BY_ID, (puzzle_id,))
-        return PUZZLE_HAS_ACTIVE_SUBMISSIONS if cur.fetchone() is not None else PUZZLE_NOT_FOUND
+        result = PUZZLE_HAS_ACTIVE_SUBMISSIONS if cur.fetchone() is not None else PUZZLE_NOT_FOUND
+        logger.info("deactivate_puzzle: %s -> %s", puzzle_id, result)
+        return result
+
+
+PUZZLE_REACTIVATED = "reactivated"
+PUZZLE_ALREADY_ACTIVE = "already_active"
+
+
+@_retry_stale_connection
+def reactivate_puzzle(puzzle_id: str) -> str:
+    """Reverses deactivate_puzzle. Returns one of PUZZLE_REACTIVATED,
+    PUZZLE_NOT_FOUND (no puzzle with this id exists at all), or
+    PUZZLE_ALREADY_ACTIVE."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(queries.REACTIVATE_PUZZLE, (puzzle_id,))
+        if cur.rowcount > 0:
+            logger.info("reactivate_puzzle: %s -> reactivated", puzzle_id)
+            return PUZZLE_REACTIVATED
+
+        cur.execute(queries.GET_PUZZLE_BY_ID_ANY_STATE, (puzzle_id,))
+        result = PUZZLE_ALREADY_ACTIVE if cur.fetchone() is not None else PUZZLE_NOT_FOUND
+        logger.info("reactivate_puzzle: %s -> %s", puzzle_id, result)
+        return result
 
 
 def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:

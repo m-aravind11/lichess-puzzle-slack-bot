@@ -23,7 +23,15 @@ class LichessDailyPuzzle:
         self.SLACK_CHANNEL_ID = os.environ['SLACK_CHANNEL_ID']
         
     def get_lichess_daily_puzzle(self) -> dict:
-        return requests.get(Constants.LICHESS_DAILY_PUZZLE_URL).json()
+        response = requests.get(Constants.LICHESS_DAILY_PUZZLE_URL)
+        try:
+            response.raise_for_status()
+        except requests.HTTPError:
+            logger.error(
+                "Lichess daily puzzle fetch failed: %s %s", response.status_code, response.text[:500]
+            )
+            raise
+        return response.json()
     
     def get_pgn_from_daily_puzzle(self,daily_puzzle: dict) -> str:
         return daily_puzzle['game']['pgn']

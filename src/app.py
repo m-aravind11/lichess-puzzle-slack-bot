@@ -1,5 +1,7 @@
+import contextvars
 import json
 import logging
+import uuid
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -13,11 +15,37 @@ from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import format_leaderboard, get_display_names
 from slack_verify import verify_slack_request
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# One id per incoming request, auto-injected into every log line (including ones
+# from db.py, slack_verify.py, etc. - anywhere that doesn't have the request in
+# scope to pass it explicitly) so concurrent requests' logs can be told apart.
+request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
+
+
+class RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.request_id = request_id_var.get()
+        return True
+
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s [%(request_id)s]: %(message)s")
+for _handler in logging.root.handlers:
+    _handler.addFilter(RequestIdFilter())
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 lichess = LichessDailyPuzzle()
 slack_client = WebClient(token=lichess.LICHESS_OAUTH_TOKEN)
+
+
+@app.middleware("http")
+async def assign_request_id(request: Request, call_next):
+    token = request_id_var.set(uuid.uuid4().hex[:8])
+    try:
+        return await call_next(request)
+    finally:
+        request_id_var.reset(token)
+
 
 @app.get('/')
 async def root():
@@ -26,15 +54,23 @@ async def root():
 @app.get('/cron/send-puzzle')
 async def cron_send_puzzle(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
-        raise HTTPException(status_code=401, detail="Unauthorized")
-    await lichess.handle_puzzle_generation_and_sending()
+        raise HTTPException(status_code=401, detail="Invalid Bearer Token")
+    try:
+        await lichess.handle_puzzle_generation_and_sending()
+    except Exception:
+        logger.exception("cron/send-puzzle failed")
+        raise
     return Response(status_code=200)
 
 @app.post('/admin/migrate')
 async def run_migrations(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
-    db.init_db()
+    try:
+        db.init_db()
+    except Exception:
+        logger.exception("admin/migrate failed")
+        raise
     return Response(status_code=200)
 
 @app.delete('/submissions/{submission_id}')
@@ -50,6 +86,15 @@ async def delete_puzzle(puzzle_id: str):
         raise HTTPException(status_code=404, detail="Puzzle not found")
     if result == db.PUZZLE_HAS_ACTIVE_SUBMISSIONS:
         raise HTTPException(status_code=409, detail="Puzzle has active submissions")
+    return Response(status_code=200)
+
+@app.post('/puzzles/{puzzle_id}/reactivate')
+async def reactivate_puzzle(puzzle_id: str):
+    result = db.reactivate_puzzle(puzzle_id)
+    if result == db.PUZZLE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="Puzzle not found")
+    if result == db.PUZZLE_ALREADY_ACTIVE:
+        raise HTTPException(status_code=409, detail="Puzzle is already active")
     return Response(status_code=200)
 
 @app.post('/slack/interactions')
@@ -73,13 +118,18 @@ async def cron_send_leaderboard(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
-    board = db.get_leaderboard()
-    if not board:
-        return Response(status_code=200)
+    try:
+        board = db.get_leaderboard()
+        if not board:
+            logger.info("cron/send-leaderboard: empty leaderboard, nothing to post")
+            return Response(status_code=200)
 
-    names = get_display_names(slack_client)
-    slack_client.chat_postMessage(
-        channel=lichess.SLACK_CHANNEL_ID,
-        text=format_leaderboard(board, names),
-    )
+        names = get_display_names(slack_client)
+        slack_client.chat_postMessage(
+            channel=lichess.SLACK_CHANNEL_ID,
+            text=format_leaderboard(board, names),
+        )
+    except Exception:
+        logger.exception("cron/send-leaderboard failed")
+        raise
     return Response(status_code=200)

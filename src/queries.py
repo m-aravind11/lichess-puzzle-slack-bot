@@ -28,6 +28,12 @@ DEACTIVATE_PUZZLE_IF_NO_ACTIVE_SUBMISSIONS = """
       AND NOT EXISTS (SELECT 1 FROM submissions WHERE puzzle_id = puzzles.puzzle_id AND active = 1)
 """
 
+REACTIVATE_PUZZLE = "UPDATE puzzles SET active = 1 WHERE puzzle_id = ? AND active = 0"
+
+# Ignores active - only used to tell "no such puzzle" apart from "already active"
+# after REACTIVATE_PUZZLE's conditional update affects no row.
+GET_PUZZLE_BY_ID_ANY_STATE = "SELECT 1 FROM puzzles WHERE puzzle_id = ?"
+
 LEADERBOARD_TOTALS = """
     SELECT user_id, MAX(user_name) AS user_name,
            COUNT(*) AS attempted, SUM(correct) AS correct,
