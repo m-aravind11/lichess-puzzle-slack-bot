@@ -45,6 +45,9 @@ With neither flag: if a puzzle was already sent today (active or
 deactivated), this is a no-op. It protects against a duplicate cron trigger
 spamming the channel with a second, different random puzzle.
 
+If both flags are passed, `new_puzzle` wins outright; `force` is checked only
+when `new_puzzle` is absent (or set to `false`).
+
 **Responses**
 
 - `200`: handled (sent, resent, skipped as already-sent, or generated fresh; check logs to tell which)

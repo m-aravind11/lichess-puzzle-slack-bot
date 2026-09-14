@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
 
-# DB Connection pool
+# Module-level, so a warm serverless invocation reuses connections from the
+# previous request instead of paying a fresh Turso handshake every time.
 _pool: "queue.Queue" = queue.Queue()
 
 
