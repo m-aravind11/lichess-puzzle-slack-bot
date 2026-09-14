@@ -10,7 +10,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
-from constants import ACTION_OPEN_ANSWER_MODAL
+from constants import SlackActions
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class LichessDailyPuzzle:
                         "elements": [
                             {
                                 "type": "button",
-                                "action_id": ACTION_OPEN_ANSWER_MODAL,
+                                "action_id": SlackActions.OPEN_ANSWER_MODAL,
                                 "text": {"type": "plain_text", "text": "Submit Answer"},
                                 "value": puzzle_id,
                             }
@@ -155,13 +155,44 @@ class LichessDailyPuzzle:
             logger.error("Got an error: %s", e.response['error'])
             return None
 
-    async def handle_puzzle_generation_and_sending(self) -> None:
+    async def handle_puzzle_generation_and_sending(self, force: bool = False, new_puzzle: bool = False) -> None:
+        """By default, skips if today's puzzle was already sent. force=True
+        resends that same puzzle (a network-issue retry - no new Lichess
+        fetch, no extra row). new_puzzle=True is the separate, explicit
+        override for actually wanting a different puzzle today - Lichess has
+        no stable "today's puzzle" id to resend (unlike the real daily
+        puzzle), so getting a different one is a distinct ask from retrying
+        the one already sent."""
+        today = datetime.now()
+        date_str = today.strftime("%Y-%m-%d")
+
+        if not new_puzzle:
+            if force:
+                existing = db.get_active_puzzle_by_date(date_str)
+                if existing:
+                    logger.info("Resending puzzle %s for %s (force)", existing['puzzle_id'], date_str)
+                    thread_ts = self.send_puzzle_to_slack(
+                        self.get_board_from_fen(existing['fen']),
+                        today.strftime("%B %d, %Y"),
+                        existing['puzzle_id'],
+                        self.get_image_link_from_fen(self.encode_fen_for_url(existing['fen'])),
+                    )
+                    db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
+                    return
+                # Nothing active to resend (e.g. today's puzzle was deactivated) -
+                # fall through and generate a fresh one instead.
+            elif db.puzzle_sent_for_date(date_str):
+                logger.info(
+                    "Puzzle already sent for %s, skipping (retrigger without force). "
+                    "Pass force=true to resend it, or new_puzzle=true for a different one.", date_str,
+                )
+                return
+
         daily_puzzle = self.get_lichess_daily_puzzle()
         pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
         fen = self.get_fen_from_pgn(pgn)
         puzzle_id = daily_puzzle['puzzle']['id']
 
-        today = datetime.now()
         thread_ts = self.send_puzzle_to_slack(
             self.get_board_from_fen(fen),
             today.strftime("%B %d, %Y"),

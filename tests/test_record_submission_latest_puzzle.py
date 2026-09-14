@@ -43,10 +43,10 @@ def test_newer_puzzle_with_same_date_is_not_shadowed_by_an_older_one(conn):
     db.save_puzzle("new_puzzle", "2026-09-14", "fen2", ["d4"])
 
     result = db.record_submission("new_puzzle", "U1", "alice", "d4", True, 10)
-    assert result == db.SUBMISSION_RECORDED
+    assert result == db.SubmissionResult.RECORDED
 
     result = db.record_submission("old_puzzle", "U2", "bob", "e4", True, 10)
-    assert result == db.SUBMISSION_STALE_PUZZLE
+    assert result == db.SubmissionResult.STALE_PUZZLE
 
 
 def test_latest_is_by_insertion_order_not_date_value(conn):
@@ -56,7 +56,7 @@ def test_latest_is_by_insertion_order_not_date_value(conn):
     db.save_puzzle("second_but_earlier_date", "2026-09-01", "fen2", ["d4"])
 
     result = db.record_submission("second_but_earlier_date", "U1", "alice", "d4", True, 10)
-    assert result == db.SUBMISSION_RECORDED
+    assert result == db.SubmissionResult.RECORDED
 
     result = db.record_submission("first", "U2", "bob", "e4", True, 10)
-    assert result == db.SUBMISSION_STALE_PUZZLE
+    assert result == db.SubmissionResult.STALE_PUZZLE

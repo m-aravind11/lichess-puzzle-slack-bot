@@ -24,20 +24,20 @@ def _patch_connection(monkeypatch, rowcount: int, fetchone_result):
 
 def test_update_affecting_a_row_deactivates_and_skips_the_fallback_check(monkeypatch):
     cur = _patch_connection(monkeypatch, rowcount=1, fetchone_result=None)
-    assert db.deactivate_puzzle("p1") == db.PUZZLE_DEACTIVATED
-    cur.execute.assert_called_once_with(queries.DEACTIVATE_PUZZLE_IF_NO_ACTIVE_SUBMISSIONS, ("p1",))
+    assert db.deactivate_puzzle("p1") == db.PuzzleResult.DEACTIVATED
+    cur.execute.assert_called_once_with(queries.PuzzleQueries.DEACTIVATE_IF_NO_ACTIVE_SUBMISSIONS, ("p1",))
 
 
 def test_update_affecting_no_row_and_puzzle_missing_returns_not_found(monkeypatch):
     cur = _patch_connection(monkeypatch, rowcount=0, fetchone_result=None)
-    assert db.deactivate_puzzle("nope") == db.PUZZLE_NOT_FOUND
-    cur.execute.assert_any_call(queries.GET_ACTIVE_PUZZLE_BY_ID, ("nope",))
+    assert db.deactivate_puzzle("nope") == db.PuzzleResult.NOT_FOUND
+    cur.execute.assert_any_call(queries.PuzzleQueries.GET_ACTIVE_BY_ID, ("nope",))
 
 
 def test_update_affecting_no_row_and_puzzle_still_active_returns_has_active_submissions(monkeypatch):
     cur = _patch_connection(monkeypatch, rowcount=0, fetchone_result={"puzzle_id": "p2"})
-    assert db.deactivate_puzzle("p2") == db.PUZZLE_HAS_ACTIVE_SUBMISSIONS
-    cur.execute.assert_any_call(queries.GET_ACTIVE_PUZZLE_BY_ID, ("p2",))
+    assert db.deactivate_puzzle("p2") == db.PuzzleResult.HAS_ACTIVE_SUBMISSIONS
+    cur.execute.assert_any_call(queries.PuzzleQueries.GET_ACTIVE_BY_ID, ("p2",))
 
 
 def test_fallback_check_is_only_run_when_the_update_affects_no_row(monkeypatch):

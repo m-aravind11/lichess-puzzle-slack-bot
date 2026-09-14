@@ -4,14 +4,14 @@ from fastapi import Response
 
 import db
 import interactions
-from constants import MOVES_ACTION_ID, MOVES_BLOCK_ID
+from constants import SlackActions
 
 
 def _payload(moves_text: str, puzzle_id="p1", user_id="U1", user_name="alice") -> dict:
     return {
         "view": {
             "private_metadata": puzzle_id,
-            "state": {"values": {MOVES_BLOCK_ID: {MOVES_ACTION_ID: {"value": moves_text}}}},
+            "state": {"values": {SlackActions.MOVES_BLOCK_ID: {SlackActions.MOVES_ACTION_ID: {"value": moves_text}}}},
         },
         "user": {"id": user_id, "username": user_name},
     }
@@ -35,23 +35,23 @@ def _slack_client() -> MagicMock:
 
 def test_blank_input_returns_generic_error():
     result = interactions.handle_view_submission(_slack_client(), MagicMock(), _payload("   "))
-    assert result["errors"][MOVES_BLOCK_ID] == "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"
+    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"
 
 
 def test_invalid_san_token_names_the_bad_move():
     result = interactions.handle_view_submission(_slack_client(), MagicMock(), _payload("Nf3 xyz123"))
-    assert "xyz123" in result["errors"][MOVES_BLOCK_ID]
+    assert "xyz123" in result["errors"][SlackActions.MOVES_BLOCK_ID]
 
 
 def test_puzzle_not_found_returns_error(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: None)
     result = interactions.handle_view_submission(_slack_client(), MagicMock(), _payload("e4"))
-    assert result["errors"][MOVES_BLOCK_ID] == "That puzzle isn't available anymore."
+    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "That puzzle isn't available anymore."
 
 
 def test_correct_answer_records_submission_and_dms_the_result(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SUBMISSION_RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
     monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 7)
 
     lichess = MagicMock()
@@ -68,7 +68,7 @@ def test_correct_answer_records_submission_and_dms_the_result(monkeypatch):
 
 def test_correct_answer_with_a_channel_post_announces_in_thread(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SUBMISSION_RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
     monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 7)
 
     lichess = MagicMock()
@@ -87,7 +87,7 @@ def test_correct_answer_with_a_channel_post_announces_in_thread(monkeypatch):
 
 def test_incorrect_answer_does_not_announce_in_thread(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SUBMISSION_RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = False
@@ -101,7 +101,7 @@ def test_incorrect_answer_does_not_announce_in_thread(monkeypatch):
 
 def test_duplicate_submission_returns_error_without_dm(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SUBMISSION_DUPLICATE))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.DUPLICATE))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
@@ -109,13 +109,13 @@ def test_duplicate_submission_returns_error_without_dm(monkeypatch):
 
     result = interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
 
-    assert result["errors"][MOVES_BLOCK_ID] == "You've already submitted an answer for this puzzle."
+    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "You've already submitted an answer for this puzzle."
     slack_client.chat_postMessage.assert_not_called()
 
 
 def test_stale_puzzle_returns_error_without_dm(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SUBMISSION_STALE_PUZZLE))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.STALE_PUZZLE))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
@@ -123,5 +123,5 @@ def test_stale_puzzle_returns_error_without_dm(monkeypatch):
 
     result = interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
 
-    assert "no longer accepting answers" in result["errors"][MOVES_BLOCK_ID]
+    assert "no longer accepting answers" in result["errors"][SlackActions.MOVES_BLOCK_ID]
     slack_client.chat_postMessage.assert_not_called()
