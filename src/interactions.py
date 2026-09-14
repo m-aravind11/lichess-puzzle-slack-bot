@@ -51,10 +51,16 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     def log_timing(step: str) -> None:
         logger.info("[timing] user=%s puzzle=%s %s: %.3fs", user_id, puzzle_id, step, time.monotonic() - t0)
 
-    if not san_moves or not all(SAN_TOKEN_RE.match(move) for move in san_moves):
+    if not san_moves:
         return {
             "response_action": "errors",
             "errors": {MOVES_BLOCK_ID: "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"},
+        }
+    bad_move = next((move for move in san_moves if not SAN_TOKEN_RE.match(move)), None)
+    if bad_move is not None:
+        return {
+            "response_action": "errors",
+            "errors": {MOVES_BLOCK_ID: f"'{bad_move}' isn't valid notation, use notations like Nf3 Nc6+ Bxb5"},
         }
 
     puzzle = db.get_puzzle(puzzle_id)
@@ -95,7 +101,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
             thread_ts=puzzle['slack_ts'],
-            text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{score} pts)!",
+            text=f"<@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{score} pts)!",
         )
         log_timing("thread announcement")
 
