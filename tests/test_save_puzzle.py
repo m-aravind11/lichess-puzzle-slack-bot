@@ -26,13 +26,13 @@ def _patch_connection(monkeypatch, active_puzzle_found: bool, insert_side_effect
 def test_new_puzzle_is_inserted(monkeypatch):
     cur = _patch_connection(monkeypatch, active_puzzle_found=False)
     db.save_puzzle("p1", "2024-01-01", "fen", ["e4"])
-    cur.execute.assert_any_call(queries.INSERT_PUZZLE, ("p1", "2024-01-01", "fen", '["e4"]', None))
+    cur.execute.assert_any_call(queries.PuzzleQueries.INSERT, ("p1", "2024-01-01", "fen", '["e4"]', None))
 
 
 def test_resend_of_an_already_active_puzzle_is_a_no_op(monkeypatch):
     cur = _patch_connection(monkeypatch, active_puzzle_found=True)
     db.save_puzzle("p1", "2024-01-01", "fen", ["e4"])
-    cur.execute.assert_called_once_with(queries.GET_ACTIVE_PUZZLE_BY_ID, ("p1",))
+    cur.execute.assert_called_once_with(queries.PuzzleQueries.GET_ACTIVE_BY_ID, ("p1",))
 
 
 def test_resend_of_a_deactivated_puzzle_does_not_raise(monkeypatch):

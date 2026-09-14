@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from slack_sdk import WebClient
 
 import db
-from constants import ACTION_OPEN_ANSWER_MODAL, ANSWER_MODAL_CALLBACK_ID, CRON_SECRET, INDEX_HTML_PATH
+from constants import Paths, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import format_leaderboard
@@ -36,7 +36,7 @@ for _handler in logging.root.handlers:
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory=os.path.dirname(INDEX_HTML_PATH)), name="static")
+app.mount("/static", StaticFiles(directory=os.path.dirname(Paths.INDEX_HTML_PATH)), name="static")
 lichess = LichessDailyPuzzle()
 slack_client = WebClient(token=lichess.LICHESS_OAUTH_TOKEN)
 
@@ -51,18 +51,18 @@ async def assign_request_id(request: Request, call_next):
 
 
 def require_admin_auth(request: Request) -> None:
-    if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
+    if Security.CRON_SECRET and request.headers.get('Authorization') != f'Bearer {Security.CRON_SECRET}':
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
 
 @app.get('/')
 async def root():
-    return FileResponse(INDEX_HTML_PATH)
+    return FileResponse(Paths.INDEX_HTML_PATH)
 
 @app.get('/cron/send-puzzle', dependencies=[Depends(require_admin_auth)])
-async def cron_send_puzzle():
+async def cron_send_puzzle(force: bool = False, new_puzzle: bool = False):
     try:
-        await lichess.handle_puzzle_generation_and_sending()
+        await lichess.handle_puzzle_generation_and_sending(force=force, new_puzzle=new_puzzle)
     except Exception:
         logger.exception("cron/send-puzzle failed")
         raise
@@ -86,18 +86,18 @@ async def delete_submission(submission_id: int):
 @app.delete('/puzzles/{puzzle_id}', dependencies=[Depends(require_admin_auth)])
 async def delete_puzzle(puzzle_id: str):
     result = db.deactivate_puzzle(puzzle_id)
-    if result == db.PUZZLE_NOT_FOUND:
+    if result == db.PuzzleResult.NOT_FOUND:
         raise HTTPException(status_code=404, detail="Puzzle not found")
-    if result == db.PUZZLE_HAS_ACTIVE_SUBMISSIONS:
+    if result == db.PuzzleResult.HAS_ACTIVE_SUBMISSIONS:
         raise HTTPException(status_code=409, detail="Puzzle has active submissions")
     return Response(status_code=200)
 
 @app.post('/puzzles/{puzzle_id}/reactivate', dependencies=[Depends(require_admin_auth)])
 async def reactivate_puzzle(puzzle_id: str):
     result = db.reactivate_puzzle(puzzle_id)
-    if result == db.PUZZLE_NOT_FOUND:
+    if result == db.PuzzleResult.NOT_FOUND:
         raise HTTPException(status_code=404, detail="Puzzle not found")
-    if result == db.PUZZLE_ALREADY_ACTIVE:
+    if result == db.PuzzleResult.ALREADY_ACTIVE:
         raise HTTPException(status_code=409, detail="Puzzle is already active")
     return Response(status_code=200)
 
@@ -108,11 +108,11 @@ async def slack_interactions(request: Request):
 
     if payload.get('type') == 'block_actions':
         action = payload['actions'][0]
-        if action.get('action_id') == ACTION_OPEN_ANSWER_MODAL:
+        if action.get('action_id') == SlackActions.OPEN_ANSWER_MODAL:
             open_answer_modal(slack_client, payload['trigger_id'], action['value'])
         return Response(status_code=200)
 
-    if payload.get('type') == 'view_submission' and payload['view'].get('callback_id') == ANSWER_MODAL_CALLBACK_ID:
+    if payload.get('type') == 'view_submission' and payload['view'].get('callback_id') == SlackActions.ANSWER_MODAL_CALLBACK_ID:
         return handle_view_submission(slack_client, lichess, payload)
 
     return Response(status_code=200)

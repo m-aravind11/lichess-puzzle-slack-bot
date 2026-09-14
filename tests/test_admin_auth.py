@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 import app as app_module
 import db
+from constants import Security
 
 ADMIN_ROUTES = [
     ("GET", "/cron/send-puzzle"),
@@ -18,7 +19,7 @@ ADMIN_ROUTES = [
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr(app_module, "CRON_SECRET", "s3cr3t")
+    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
     return TestClient(app_module.app)
 
 
@@ -70,7 +71,7 @@ def test_unset_cron_secret_disables_auth_entirely(monkeypatch):
     # Documents existing behavior: an unset/empty CRON_SECRET means every admin
     # route is open to anyone. Not a change here - just pinning it so a future
     # accidental unset in deployment config doesn't go unnoticed by the suite.
-    monkeypatch.setattr(app_module, "CRON_SECRET", None)
+    monkeypatch.setattr(Security, "CRON_SECRET", None)
     monkeypatch.setattr(db, "deactivate_submission", MagicMock(return_value=True))
     client = TestClient(app_module.app)
     response = client.delete("/submissions/1")

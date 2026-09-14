@@ -6,7 +6,7 @@ from fastapi import Response
 from slack_sdk import WebClient
 
 import db
-from constants import ANSWER_MODAL_CALLBACK_ID, MOVES_ACTION_ID, MOVES_BLOCK_ID, SAN_TOKEN_RE
+from constants import SlackActions, Validation
 from daily_puzzle import LichessDailyPuzzle
 from scoring import compute_score
 from slack_helpers import dm, format_result_dm, format_seconds
@@ -19,7 +19,7 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
         trigger_id=trigger_id,
         view={
             "type": "modal",
-            "callback_id": ANSWER_MODAL_CALLBACK_ID,
+            "callback_id": SlackActions.ANSWER_MODAL_CALLBACK_ID,
             "private_metadata": puzzle_id,
             "title": {"type": "plain_text", "text": "Submit answer"},
             "submit": {"type": "plain_text", "text": "Submit"},
@@ -27,11 +27,11 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
             "blocks": [
                 {
                     "type": "input",
-                    "block_id": MOVES_BLOCK_ID,
+                    "block_id": SlackActions.MOVES_BLOCK_ID,
                     "label": {"type": "plain_text", "text": "Your line (yours and your opponent's moves, in order)"},
                     "element": {
                         "type": "plain_text_input",
-                        "action_id": MOVES_ACTION_ID,
+                        "action_id": SlackActions.MOVES_ACTION_ID,
                         "placeholder": {"type": "plain_text", "text": "e.g. Nf3 Nc6 Bb5"},
                     },
                 }
@@ -45,7 +45,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     puzzle_id = payload['view']['private_metadata']
     user_id = payload['user']['id']
     user_name = payload['user']['username']
-    text = payload['view']['state']['values'][MOVES_BLOCK_ID][MOVES_ACTION_ID]['value'].strip()
+    text = payload['view']['state']['values'][SlackActions.MOVES_BLOCK_ID][SlackActions.MOVES_ACTION_ID]['value'].strip()
     san_moves = text.split()
 
     def log_timing(step: str) -> None:
@@ -54,19 +54,19 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     if not san_moves:
         return {
             "response_action": "errors",
-            "errors": {MOVES_BLOCK_ID: "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"},
         }
-    bad_move = next((move for move in san_moves if not SAN_TOKEN_RE.match(move)), None)
+    bad_move = next((move for move in san_moves if not Validation.SAN_TOKEN_RE.match(move)), None)
     if bad_move is not None:
         return {
             "response_action": "errors",
-            "errors": {MOVES_BLOCK_ID: f"'{bad_move}' isn't valid notation, use notations like Nf3 Nc6+ Bxb5"},
+            "errors": {SlackActions.MOVES_BLOCK_ID: f"'{bad_move}' isn't valid notation, use notations like Nf3 Nc6+ Bxb5"},
         }
 
     puzzle = db.get_puzzle(puzzle_id)
     log_timing("get_puzzle")
     if puzzle is None:
-        return {"response_action": "errors", "errors": {MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
+        return {"response_action": "errors", "errors": {SlackActions.MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
 
     correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
     log_timing("check_answer")
@@ -83,15 +83,15 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     result = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 
-    if result == db.SUBMISSION_STALE_PUZZLE:
+    if result == db.SubmissionResult.STALE_PUZZLE:
         return {
             "response_action": "errors",
-            "errors": {MOVES_BLOCK_ID: "A new puzzle has been posted - this one is no longer accepting answers."},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "A new puzzle has been posted - this one is no longer accepting answers."},
         }
-    if result == db.SUBMISSION_DUPLICATE:
+    if result == db.SubmissionResult.DUPLICATE:
         return {
             "response_action": "errors",
-            "errors": {MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
         }
 
     dm(slack_client, user_id, format_result_dm(puzzle, text, correct, score))
