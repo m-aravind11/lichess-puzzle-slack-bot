@@ -120,19 +120,19 @@ class LichessDailyPuzzle:
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text=f"*Daily Puzzle - {date_str}* - {self.whose_move(board).upper()} to play.",
+                text=f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play.",
                 blocks=[
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"*Daily Puzzle - {date_str}*\n\n{self.whose_move(board).upper()} to play -- Click *Submit Answer* (below the image) to record your response.",
+                            "text": f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play. \n\n Click *Submit Answer* (below the image) to record your response.",
                         },
                     },
                     {
                         "type": "image",
                         "image_url": image_link,
-                        "alt_text": f"Daily puzzle - {date_str}",
+                        "alt_text": f"Puzzle for the day ({date_str})",
                     },
                     {
                         "type": "actions",
