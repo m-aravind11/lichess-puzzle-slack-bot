@@ -16,26 +16,6 @@ def dm(slack_client: WebClient, user_id: str, text: str) -> None:
         logger.error("Full response: %s", e.response.data)
 
 
-def get_display_names(slack_client: WebClient) -> dict:
-    """Resolves Slack user ids to display names via users.list (paginated) - one or a
-    few calls for the whole workspace roster, rather than one users.info call per
-    leaderboard row, which is what made an earlier version of this risk timing out."""
-    names = {}
-    cursor = None
-    try:
-        while True:
-            response = slack_client.users_list(cursor=cursor, limit=200)
-            for member in response['members']:
-                profile = member.get('profile', {})
-                names[member['id']] = profile.get('display_name') or profile.get('real_name') or member.get('name') or member['id']
-            cursor = response.get('response_metadata', {}).get('next_cursor')
-            if not cursor:
-                break
-    except SlackApiError as e:
-        logger.error("Could not fetch user list: %s", e.response['error'])
-    return names
-
-
 def format_seconds(seconds: float | None) -> str:
     if seconds is None or seconds < 0:
         return "-"
@@ -61,13 +41,12 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: in
     return f"{puzzle_link}\nYou answered: `{submitted_text}`\n{result_text}"
 
 
-def format_leaderboard(board: list, names: dict | None = None) -> str:
-    names = names or {}
+def format_leaderboard(board: list) -> str:
     columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time"]
     rows = [
         [
             str(i + 1),
-            names.get(row["user_id"], row["user_id"]),
+            row["user_name"] or row["user_id"],
             str(row["score"]),
             str(row["correct"]),
             str(row["incorrect"]),

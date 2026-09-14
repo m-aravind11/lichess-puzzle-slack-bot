@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import time
 from datetime import datetime
 import requests
 
@@ -16,22 +17,32 @@ logger = logging.getLogger(__name__)
 class Constants:
     LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/daily"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
+    FETCH_RETRIES = 2
+    FETCH_RETRY_DELAY_SECONDS = 3
 
 class LichessDailyPuzzle:
     def __init__(self):
         self.LICHESS_OAUTH_TOKEN = os.environ['LICHESS_OAUTH_TOKEN']
         self.SLACK_CHANNEL_ID = os.environ['SLACK_CHANNEL_ID']
-        
+
     def get_lichess_daily_puzzle(self) -> dict:
-        response = requests.get(Constants.LICHESS_DAILY_PUZZLE_URL)
-        try:
-            response.raise_for_status()
-        except requests.HTTPError:
-            logger.error(
-                "Lichess daily puzzle fetch failed: %s %s", response.status_code, response.text[:500]
-            )
-            raise
-        return response.json()
+        # The cron trigger doesn't retry a failed run on its own, so a couple of
+        # in-process retries here are the only thing standing between a transient
+        # Lichess hiccup and no puzzle getting posted for the day.
+        attempts = Constants.FETCH_RETRIES + 1
+        for attempt in range(1, attempts + 1):
+            response = requests.get(Constants.LICHESS_DAILY_PUZZLE_URL)
+            try:
+                response.raise_for_status()
+                return response.json()
+            except requests.HTTPError:
+                logger.error(
+                    "Lichess daily puzzle fetch failed (attempt %d/%d): %s %s",
+                    attempt, attempts, response.status_code, response.text[:500],
+                )
+                if attempt == attempts:
+                    raise
+                time.sleep(Constants.FETCH_RETRY_DELAY_SECONDS)
     
     def get_pgn_from_daily_puzzle(self,daily_puzzle: dict) -> str:
         return daily_puzzle['game']['pgn']
