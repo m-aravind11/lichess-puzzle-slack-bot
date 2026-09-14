@@ -104,7 +104,7 @@ class LichessDailyPuzzle:
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": f"*Daily Puzzle - {date_str}*\n{self.whose_move(board).upper()} to play. Click *Submit Answer* to submit.",
+                            "text": f"*Daily Puzzle - {date_str}*\n\n{self.whose_move(board).upper()} to play -- Click *Submit Answer* (below the image) to record your response.",
                         },
                     },
                     {
