@@ -12,7 +12,7 @@ GET_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 INSERT_SUBMISSION_IF_LATEST = """
     INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)
     SELECT ?, ?, ?, ?, ?, ?, ?, 1
-    WHERE ? = (SELECT puzzle_id FROM puzzles WHERE active = 1 ORDER BY date DESC LIMIT 1)
+    WHERE ? = (SELECT puzzle_id FROM puzzles WHERE active = 1 ORDER BY rowid DESC LIMIT 1)
 """
 
 DEACTIVATE_SUBMISSION = """
