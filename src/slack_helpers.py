@@ -41,41 +41,28 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: in
     return f"{puzzle_link}\nYou answered: `{submitted_text}`\n{result_text}"
 
 
-def format_leaderboard_fallback(board: list) -> str:
-    """Plain-text summary for the notification/screen-reader `text` param - Slack
-    requires it alongside `blocks`, but it's never what's actually displayed in
-    a channel that supports blocks."""
-    entries = [f"{i + 1}. {row['user_name'] or row['user_id']} ({row['score']} pts)" for i, row in enumerate(board)]
-    return "Leaderboard: " + " | ".join(entries)
-
-
-def build_leaderboard_blocks(board: list) -> list:
-    """Block Kit layout instead of a monospace table - a fixed-width table
-    either truncates or forces horizontal scrolling on Slack mobile, while
-    section fields reflow to one column on narrow screens automatically."""
-    blocks = [
-        {
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_",
-            },
-        },
-        {"type": "divider"},
+def format_leaderboard(board: list) -> str:
+    columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time"]
+    rows = [
+        [
+            str(i + 1),
+            row["user_name"] or row["user_id"],
+            str(row["score"]),
+            str(row["correct"]),
+            str(row["incorrect"]),
+            str(row["attempted"]),
+            format_seconds(row["avg_solve_seconds"]),
+        ]
+        for i, row in enumerate(board)
     ]
-    for i, row in enumerate(board):
-        name = row["user_name"] or row["user_id"]
-        blocks.append({
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*{i + 1}. {name}*\n{row['score']} pts"},
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        f"Correct {row['correct']}, Incorrect {row['incorrect']} ({row['attempted']} attempted)\n"
-                        f"avg {format_seconds(row['avg_solve_seconds'])}"
-                    ),
-                },
-            ],
-        })
-    return blocks
+    widths = [max(len(col), *(len(r[i]) for r in rows)) for i, col in enumerate(columns)]
+
+    def format_row(cells: list) -> str:
+        return "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(cells))
+
+    table_lines = [format_row(columns), "  ".join("-" * w for w in widths)]
+    table_lines += [format_row(r) for r in rows]
+
+    header = "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
+    table = "```\n" + "\n".join(table_lines) + "\n```"
+    return f"{header}\n{table}"

@@ -12,7 +12,7 @@ import db
 from constants import ACTION_OPEN_ANSWER_MODAL, ANSWER_MODAL_CALLBACK_ID, CRON_SECRET, INDEX_HTML_PATH
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import build_leaderboard_blocks, format_leaderboard_fallback
+from slack_helpers import format_leaderboard
 from slack_verify import verify_slack_request
 
 # One id per incoming request, auto-injected into every log line (including ones
@@ -124,8 +124,7 @@ async def cron_send_leaderboard():
 
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
-            text=format_leaderboard_fallback(board),
-            blocks=build_leaderboard_blocks(board),
+            text=format_leaderboard(board),
         )
     except Exception:
         logger.exception("cron/send-leaderboard failed")
