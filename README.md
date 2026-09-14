@@ -45,7 +45,10 @@ The leaderboard ranks by total points, ties broken by fastest average solve
 time (correct answers only).
 
 The modal only asks for the player's own moves, one per ply of theirs, in
-order - not the opponent's replies. Move checking
+order - not the opponent's replies. Its label states the puzzle length
+directly ("This is a 3-move puzzle", the standard "mate in N" sense -
+`open_answer_modal` reads it off `solution[0::2]`) so the user knows where
+their line ends. Move checking
 (`LichessDailyPuzzle.check_answer`) parses them with `python-chess` and
 compares to the solution's moves at those plies (`solution[0::2]`) using
 parsed `Move` objects instead of raw strings, so `Qe2`, `Qxe2`, `Q*e2`, and

@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) -> None:
+    # move_count is player plies (solution[0::2]), the standard chess sense of
+    # "mate in N" - tells the user directly where their line ends.
+    puzzle = db.get_puzzle(puzzle_id)
+    move_count = len(puzzle['solution'][0::2]) if puzzle else None
+    label = f"This is a {move_count}-move puzzle" if move_count is not None else "Your moves"
+
     slack_client.views_open(
         trigger_id=trigger_id,
         view={
@@ -28,7 +34,8 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
                 {
                     "type": "input",
                     "block_id": SlackActions.MOVES_BLOCK_ID,
-                    "label": {"type": "plain_text", "text": "Your moves only, in order (skip your opponent's replies)"},
+                    "label": {"type": "plain_text", "text": label},
+                    "hint": {"type": "plain_text", "text": "Enter only your own moves - your opponent's replies are taken from the puzzle automatically."},
                     "element": {
                         "type": "plain_text_input",
                         "action_id": SlackActions.MOVES_ACTION_ID,
