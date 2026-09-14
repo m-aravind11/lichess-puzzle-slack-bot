@@ -19,7 +19,7 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
     # "mate in N" - tells the user directly where their line ends.
     puzzle = db.get_puzzle(puzzle_id)
     move_count = len(puzzle['solution'][0::2]) if puzzle else None
-    label = f"This is a {move_count}-move puzzle" if move_count is not None else "Your moves"
+    label = f"Your moves ({move_count}-move puzzle)" if move_count is not None else "Your moves"
 
     slack_client.views_open(
         trigger_id=trigger_id,
@@ -35,7 +35,7 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
                     "type": "input",
                     "block_id": SlackActions.MOVES_BLOCK_ID,
                     "label": {"type": "plain_text", "text": label},
-                    "hint": {"type": "plain_text", "text": "Enter only your own moves - your opponent's replies are taken from the puzzle automatically."},
+                    "hint": {"type": "plain_text", "text": "Separate moves with spaces, e.g. Nf3 Bb5. Your opponent's replies are added automatically - don't type them."},
                     "element": {
                         "type": "plain_text_input",
                         "action_id": SlackActions.MOVES_ACTION_ID,
