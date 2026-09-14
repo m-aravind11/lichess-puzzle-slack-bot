@@ -51,11 +51,11 @@ def format_seconds(seconds: float | None) -> str:
     return " ".join(parts)
 
 
-def format_result_dm(puzzle: dict, submitted_text: str, correct: bool) -> str:
+def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int) -> str:
     puzzle_date = datetime.strptime(puzzle['date'], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
     result_text = (
-        "That's correct - nice work!" if correct
+        f"That's correct - nice work! +{score} points" if correct
         else f"Not quite. The solution was: `{' '.join(puzzle['solution'])}`"
     )
     return f"{puzzle_link}\nYou answered: `{submitted_text}`\n{result_text}"
@@ -63,11 +63,12 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool) -> str:
 
 def format_leaderboard(board: list, names: dict | None = None) -> str:
     names = names or {}
-    columns = ["#", "Name", "Correct", "Incorrect", "Attempted", "Avg Time"]
+    columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time"]
     rows = [
         [
             str(i + 1),
             names.get(row["user_id"], row["user_id"]),
+            str(row["score"]),
             str(row["correct"]),
             str(row["incorrect"]),
             str(row["attempted"]),
@@ -83,6 +84,6 @@ def format_leaderboard(board: list, names: dict | None = None) -> str:
     table_lines = [format_row(columns), "  ".join("-" * w for w in widths)]
     table_lines += [format_row(r) for r in rows]
 
-    header = "*🏆 Leaderboard* _(ties broken by fastest average solve time)_"
+    header = "*🏆 Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
     table = "```\n" + "\n".join(table_lines) + "\n```"
     return f"{header}\n{table}"

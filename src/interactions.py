@@ -9,6 +9,7 @@ from slack_sdk import WebClient
 import db
 from constants import ANSWER_MODAL_CALLBACK_ID, MOVES_ACTION_ID, MOVES_BLOCK_ID, SAN_TOKEN_RE
 from daily_puzzle import LichessDailyPuzzle
+from scoring import compute_score
 from slack_helpers import dm, format_result_dm, format_seconds
 
 logger = logging.getLogger(__name__)
@@ -62,37 +63,40 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     if puzzle is None:
         return {"response_action": "errors", "errors": {MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
 
-    latest_puzzle = db.get_latest_puzzle()
-    log_timing("get_latest_puzzle")
-    if latest_puzzle['puzzle_id'] != puzzle_id:
+    correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
+    log_timing("check_answer")
+
+    elapsed_seconds = None
+    if puzzle['slack_ts']:
+        posted_at = datetime.fromtimestamp(float(puzzle['slack_ts']), tz=timezone.utc)
+        elapsed_seconds = (datetime.now(timezone.utc) - posted_at).total_seconds()
+    score = compute_score(correct, elapsed_seconds)
+
+    # No separate has_submitted()/get_latest_puzzle() pre-checks - record_submission()
+    # does both the staleness check and the duplicate check as part of the same insert,
+    # since every extra round trip here eats into Slack's 3-second interaction budget.
+    result = db.record_submission(puzzle_id, user_id, user_id, text, correct, score)
+    log_timing("record_submission")
+
+    if result == db.SUBMISSION_STALE_PUZZLE:
         return {
             "response_action": "errors",
             "errors": {MOVES_BLOCK_ID: "A new puzzle has been posted - this one is no longer accepting answers."},
         }
-
-    correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
-    log_timing("check_answer")
-
-    # No separate has_submitted() pre-check - record_submission()'s unique index
-    # already catches a duplicate, and skipping the extra round trip here matters
-    # since this whole handler has to ack within Slack's 3-second interaction budget.
-    if not db.record_submission(puzzle_id, user_id, user_id, text, correct):
+    if result == db.SUBMISSION_DUPLICATE:
         return {
             "response_action": "errors",
             "errors": {MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
         }
-    log_timing("record_submission")
 
-    dm(slack_client, user_id, format_result_dm(puzzle, text, correct))
+    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, score))
     log_timing("dm")
 
     if correct and puzzle['slack_ts']:
-        posted_at = datetime.fromtimestamp(float(puzzle['slack_ts']), tz=timezone.utc)
-        elapsed = (datetime.now(timezone.utc) - posted_at).total_seconds()
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
             thread_ts=puzzle['slack_ts'],
-            text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed)}!",
+            text=f"\U0001F389 <@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{score} pts)!",
         )
         log_timing("thread announcement")
 

@@ -78,12 +78,18 @@ def _0005_add_active_to_puzzles(conn) -> None:
         conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
 
 
+def _0006_add_score_to_submissions(conn) -> None:
+    if "score" not in _table_columns(conn, "submissions"):
+        conn.cursor().execute("ALTER TABLE submissions ADD COLUMN score INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
     ("0003_add_slack_ts_to_puzzles", _0003_add_slack_ts_to_puzzles),
     ("0004_soft_delete_support_for_submissions", _0004_soft_delete_support_for_submissions),
     ("0005_add_active_to_puzzles", _0005_add_active_to_puzzles),
+    ("0006_add_score_to_submissions", _0006_add_score_to_submissions),
 ]
 
 

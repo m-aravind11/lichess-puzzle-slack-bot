@@ -5,13 +5,14 @@ INSERT_PUZZLE = """
     VALUES (?, ?, ?, ?, ?, 1)
 """
 
-GET_LATEST_PUZZLE = "SELECT * FROM puzzles WHERE active = 1 ORDER BY date DESC LIMIT 1"
-
 GET_PUZZLE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 
-INSERT_SUBMISSION = """
-    INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, submitted_at, active)
-    VALUES (?, ?, ?, ?, ?, ?, 1)
+# No-op (rowcount 0) if puzzle_id isn't the latest active puzzle; duplicate still
+# raises IntegrityError via the partial unique index.
+INSERT_SUBMISSION_IF_LATEST = """
+    INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)
+    SELECT ?, ?, ?, ?, ?, ?, ?, 1
+    WHERE ? = (SELECT puzzle_id FROM puzzles WHERE active = 1 ORDER BY date DESC LIMIT 1)
 """
 
 DEACTIVATE_SUBMISSION = """
@@ -21,7 +22,7 @@ DEACTIVATE_SUBMISSION = """
 LEADERBOARD_TOTALS = """
     SELECT user_id, MAX(user_name) AS user_name,
            COUNT(*) AS attempted, SUM(correct) AS correct,
-           COUNT(*) - SUM(correct) AS incorrect
+           COUNT(*) - SUM(correct) AS incorrect, SUM(score) AS score
     FROM submissions
     WHERE active = 1
     GROUP BY user_id

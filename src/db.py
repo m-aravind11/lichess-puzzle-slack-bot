@@ -95,15 +95,6 @@ def _row_to_puzzle(row: dict) -> dict:
     }
 
 
-@_retry_stale_connection
-def get_latest_puzzle() -> dict | None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(queries.GET_LATEST_PUZZLE)
-        row = cur.fetchone()
-        return _row_to_puzzle(_row_to_dict(cur, row)) if row else None
-
-
 # Puzzle rows are only ever inserted, never updated (see queries.py) - once
 # fetched, a puzzle_id's data can't go stale, so it's safe to cache for the
 # life of the process instead of round-tripping to Turso on every submission.
@@ -126,18 +117,29 @@ def get_puzzle(puzzle_id: str) -> dict | None:
     return puzzle
 
 
+SUBMISSION_RECORDED = "recorded"
+SUBMISSION_DUPLICATE = "duplicate"
+SUBMISSION_STALE_PUZZLE = "stale_puzzle"
+
+
 @_retry_stale_connection
-def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool) -> bool:
-    """Returns False if the user already has an active submission for this puzzle (no-op), True if recorded."""
+def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> str:
+    """Records a submission, checking in the same statement that puzzle_id is still
+    the latest active puzzle (see INSERT_SUBMISSION_IF_LATEST) - one Turso round trip
+    covering both the staleness check and the write. Returns one of SUBMISSION_RECORDED,
+    SUBMISSION_DUPLICATE (an active submission already exists for this puzzle/user), or
+    SUBMISSION_STALE_PUZZLE (a newer puzzle has since been posted). score is computed by
+    the caller (see scoring.compute_score) since only it knows the puzzle's post time."""
     with get_connection() as conn:
+        cur = conn.cursor()
         try:
-            conn.cursor().execute(
-                queries.INSERT_SUBMISSION,
-                (puzzle_id, user_id, user_name, moves, int(correct), datetime.now(timezone.utc).isoformat()),
+            cur.execute(
+                queries.INSERT_SUBMISSION_IF_LATEST,
+                (puzzle_id, user_id, user_name, moves, int(correct), score, datetime.now(timezone.utc).isoformat(), puzzle_id),
             )
         except turso_serverless.IntegrityError:
-            return False
-    return True
+            return SUBMISSION_DUPLICATE
+        return SUBMISSION_RECORDED if cur.rowcount > 0 else SUBMISSION_STALE_PUZZLE
 
 
 @_retry_stale_connection
@@ -157,8 +159,9 @@ def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
 
 @_retry_stale_connection
 def get_leaderboard(limit: int = 10) -> list:
-    """Ranks by correct answers, breaking ties by fastest average solve time
-    (time from puzzle post to submission, over correct answers only)."""
+    """Ranks by total points (see scoring.compute_score - faster correct answers
+    score higher), breaking ties by fastest average solve time (time from puzzle
+    post to submission, over correct answers only)."""
     with get_connection() as conn:
         cur = conn.cursor()
 
@@ -181,6 +184,6 @@ def get_leaderboard(limit: int = 10) -> list:
 
     ranked = sorted(
         board.values(),
-        key=lambda r: (-r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
+        key=lambda r: (-r["score"], -r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
     )
     return ranked[:limit]
