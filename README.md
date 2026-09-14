@@ -44,9 +44,16 @@ for a measurement that isn't there. See `src/scoring.py`.
 The leaderboard ranks by total points, ties broken by fastest average solve
 time (correct answers only).
 
-Move checking (`LichessDailyPuzzle.check_answer`) parses both sides with
-`python-chess` and compares UCI move sequences instead of raw strings, so
-`Qe2`, `Qxe2`, `Q*e2`, and `qxe2#` all count as the same move.
+The modal only asks for the player's own moves, one per ply of theirs, in
+order - not the opponent's replies. Move checking
+(`LichessDailyPuzzle.check_answer`) parses them with `python-chess` and
+compares to the solution's moves at those plies (`solution[0::2]`) using
+parsed `Move` objects instead of raw strings, so `Qe2`, `Qxe2`, `Q*e2`, and
+`qxe2#` all count as the same move. The opponent's replies (`solution[1::2]`)
+come straight from the puzzle's own solution and are never something the
+user has to guess - Lichess's solution only records one of what can be
+several equally valid opponent replies, so requiring an exact guess there
+would reject correct lines.
 
 ## Local setup
 

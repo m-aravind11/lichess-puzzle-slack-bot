@@ -28,11 +28,11 @@ def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) 
                 {
                     "type": "input",
                     "block_id": SlackActions.MOVES_BLOCK_ID,
-                    "label": {"type": "plain_text", "text": "Your line (yours and your opponent's moves, in order)"},
+                    "label": {"type": "plain_text", "text": "Your moves only, in order (skip your opponent's replies)"},
                     "element": {
                         "type": "plain_text_input",
                         "action_id": SlackActions.MOVES_ACTION_ID,
-                        "placeholder": {"type": "plain_text", "text": "e.g. Nf3 Nc6 Bb5"},
+                        "placeholder": {"type": "plain_text", "text": "e.g. Nf3 Bb5"},
                     },
                 }
             ],
@@ -54,7 +54,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     if not san_moves:
         return {
             "response_action": "errors",
-            "errors": {SlackActions.MOVES_BLOCK_ID: "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "Enter your own moves e.g. Nf3 Bb5"},
         }
     bad_move = next((move for move in san_moves if not Validation.SAN_TOKEN_RE.match(move)), None)
     if bad_move is not None:

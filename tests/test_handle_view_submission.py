@@ -35,7 +35,7 @@ def _slack_client() -> MagicMock:
 
 def test_blank_input_returns_generic_error():
     result = interactions.handle_view_submission(_slack_client(), MagicMock(), _payload("   "))
-    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "Enter your line as SAN moves, e.g. Nf3 Nc6 Bb5"
+    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "Enter your own moves e.g. Nf3 Bb5"
 
 
 def test_invalid_san_token_names_the_bad_move():
