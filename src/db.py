@@ -151,6 +151,28 @@ def deactivate_submission(submission_id: int) -> bool:
         return cur.rowcount > 0
 
 
+PUZZLE_DEACTIVATED = "deactivated"
+PUZZLE_NOT_FOUND = "not_found"
+PUZZLE_HAS_ACTIVE_SUBMISSIONS = "has_active_submissions"
+
+
+@_retry_stale_connection
+def deactivate_puzzle(puzzle_id: str) -> str:
+    """Soft-deletes a puzzle by id, refusing when it still has active submissions
+    against it - those submissions' scores and solve times feed the leaderboard,
+    so orphaning them would leave it pointing at a puzzle that no longer exists.
+    Returns one of PUZZLE_DEACTIVATED, PUZZLE_NOT_FOUND (no active puzzle with
+    this id), or PUZZLE_HAS_ACTIVE_SUBMISSIONS."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(queries.DEACTIVATE_PUZZLE_IF_NO_ACTIVE_SUBMISSIONS, (puzzle_id,))
+        if cur.rowcount > 0:
+            return PUZZLE_DEACTIVATED
+
+        cur.execute(queries.GET_ACTIVE_PUZZLE_BY_ID, (puzzle_id,))
+        return PUZZLE_HAS_ACTIVE_SUBMISSIONS if cur.fetchone() is not None else PUZZLE_NOT_FOUND
+
+
 def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
     posted_at = datetime.fromtimestamp(float(puzzle_slack_ts), tz=timezone.utc)
     submitted_at = datetime.fromisoformat(submitted_at)

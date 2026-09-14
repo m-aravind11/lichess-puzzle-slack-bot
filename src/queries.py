@@ -19,6 +19,15 @@ DEACTIVATE_SUBMISSION = """
     UPDATE submissions SET active = 0 WHERE id = ? AND active = 1
 """
 
+# Conditional on no active submissions existing for the puzzle, so the common
+# case (safe to delete) is a single atomic round trip instead of a separate
+# check-then-update that could race with a submission landing in between.
+DEACTIVATE_PUZZLE_IF_NO_ACTIVE_SUBMISSIONS = """
+    UPDATE puzzles SET active = 0
+    WHERE puzzle_id = ? AND active = 1
+      AND NOT EXISTS (SELECT 1 FROM submissions WHERE puzzle_id = puzzles.puzzle_id AND active = 1)
+"""
+
 LEADERBOARD_TOTALS = """
     SELECT user_id, MAX(user_name) AS user_name,
            COUNT(*) AS attempted, SUM(correct) AS correct,

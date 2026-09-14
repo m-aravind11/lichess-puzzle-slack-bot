@@ -33,14 +33,23 @@ async def cron_send_puzzle(request: Request):
 @app.post('/admin/migrate')
 async def run_migrations(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Invalid Bearer Token")
     db.init_db()
     return Response(status_code=200)
 
 @app.delete('/submissions/{submission_id}')
 async def delete_submission(submission_id: int):
     if not db.deactivate_submission(submission_id):
-        raise HTTPException(status_code=404, detail="Submission not found or already inactive")
+        raise HTTPException(status_code=404, detail="Submission not found")
+    return Response(status_code=200)
+
+@app.delete('/puzzles/{puzzle_id}')
+async def delete_puzzle(puzzle_id: str):
+    result = db.deactivate_puzzle(puzzle_id)
+    if result == db.PUZZLE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="Puzzle not found")
+    if result == db.PUZZLE_HAS_ACTIVE_SUBMISSIONS:
+        raise HTTPException(status_code=409, detail="Puzzle has active submissions")
     return Response(status_code=200)
 
 @app.post('/slack/interactions')
@@ -62,7 +71,7 @@ async def slack_interactions(request: Request):
 @app.get('/cron/send-leaderboard')
 async def cron_send_leaderboard(request: Request):
     if CRON_SECRET and request.headers.get('Authorization') != f'Bearer {CRON_SECRET}':
-        raise HTTPException(status_code=401, detail="Unauthorized")
+        raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
     board = db.get_leaderboard()
     if not board:
