@@ -124,14 +124,14 @@ class LichessDailyPuzzle:
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text=f"<!here> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play, {num_moves} {move_label}.",
+                text=f"<!channel> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play, {num_moves} {move_label}.",
                 blocks=[
                     {
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
                             "text": (
-                                f"<!here> *Puzzle for the day ({date_str})*\n"
+                                f"<!channel> *Puzzle for the day ({date_str})*\n"
                                 f"`{self.whose_move(board).upper()} TO PLAY · {num_moves} {move_label.upper()}`\n\n"
                                 f"Click *Submit Answer* below and enter only your own moves, e.g. `Nf3 Bb5` "
                                 f"(your opponent's replies are added automatically). You'll get the result by DM."
