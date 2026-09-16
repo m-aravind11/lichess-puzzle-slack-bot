@@ -1,0 +1,15 @@
+name: Cron - send puzzle
+
+on:
+  schedule:
+    - cron: "30 11 * * *" # 5:00 PM IST
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger send-puzzle
+        run: |
+          curl -sf "https://lichess-puzzle-slack-bot.vercel.app/cron/send-puzzle" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
