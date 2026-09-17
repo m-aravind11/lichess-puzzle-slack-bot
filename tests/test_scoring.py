@@ -1,6 +1,6 @@
 import pytest
 
-from scoring import HALF_LIFE_MINUTES, MAX_SCORE, compute_score
+from scoring import MAX_SCORE, compute_score
 
 
 @pytest.mark.parametrize("elapsed_seconds", [None, 0, 1, 3600, 1_000_000])
@@ -27,19 +27,29 @@ def test_correct_answer_with_negative_elapsed_gets_max_score(elapsed_seconds):
 
 @pytest.mark.parametrize("minutes,expected", [
     (0, 10),
-    (1, 10),
+    (9, 10),
+    (10, 9),        # boundary: right at a threshold drops to the next tier
+    (29, 9),
+    (30, 8),
+    (59, 8),
     (60, 7),
-    (119, 5),
-    (HALF_LIFE_MINUTES, 5),        # exactly one half-life -> half the points
-    (121, 5),
-    (240, 2),                      # two half-lives -> a quarter of the points
-    (360, 1),
-    (480, 1),
-    (600, 0),
-    (720, 0),
-    (1440, 0),                     # a full day out - decayed to nothing
+    (89, 7),
+    (90, 6),
+    (119, 6),
+    (120, 5),
+    (179, 5),
+    (180, 4),
+    (239, 4),
+    (240, 3),
+    (359, 3),
+    (360, 2),
+    (539, 2),
+    (540, 1),
+    (719, 1),
+    (720, 0),       # 12 hours out - no points left
+    (1440, 0),      # a full day out
 ])
-def test_correct_answer_decays_with_elapsed_time(minutes, expected):
+def test_correct_answer_steps_down_with_elapsed_time(minutes, expected):
     assert compute_score(True, minutes * 60) == expected
 
 
