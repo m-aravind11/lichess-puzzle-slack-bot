@@ -5,13 +5,14 @@ import os
 import uuid
 from urllib.parse import parse_qs
 
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+import requests
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slack_sdk import WebClient
 
 import db
-from constants import Paths, Security, SlackActions
+from constants import Paths, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import format_leaderboard
@@ -61,31 +62,65 @@ def require_admin_auth(request: Request) -> None:
 async def root():
     return FileResponse(Paths.INDEX_HTML_PATH)
 
-@app.get('/cron/send-puzzle', dependencies=[Depends(require_admin_auth)])
-async def cron_send_puzzle(force: bool = False, new_puzzle: bool = False):
+@app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_admin_auth)])
+async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
     try:
         await lichess.handle_puzzle_generation_and_sending(force=force, new_puzzle=new_puzzle)
     except Exception:
-        logger.exception("cron/send-puzzle failed")
+        logger.exception("admin/dailyPuzzle:send failed")
         raise
     return Response(status_code=200)
 
-@app.post('/admin/migrate', dependencies=[Depends(require_admin_auth)])
+@app.post('/admin/puzzles', dependencies=[Depends(require_admin_auth)])
+async def queue_puzzle(request: Request):
+    body = await request.json()
+    puzzle_id = str(body.get('puzzleId', '')).strip()
+    if not puzzle_id:
+        raise HTTPException(status_code=400, detail="puzzleId is required")
+
+    # Resolved here, at queue time, so a bad id is rejected immediately instead
+    # of silently falling back to a random puzzle when the cron runs.
+    try:
+        raw_puzzle = lichess.get_puzzle_by_id(puzzle_id)
+    except requests.HTTPError:
+        raise HTTPException(status_code=502, detail="Could not fetch puzzleId from Lichess")
+
+    fen, resolved_id, solution = lichess.resolve_puzzle(raw_puzzle)
+    if not db.queue_puzzle(resolved_id, fen, solution):
+        raise HTTPException(status_code=409, detail="Puzzle already exists")
+    return Response(status_code=201)
+
+@app.get('/admin/puzzles', dependencies=[Depends(require_admin_auth)])
+async def list_puzzles(state: str | None = None):
+    if state not in (None, PuzzleState.QUEUED, PuzzleState.SENT):
+        raise HTTPException(status_code=400, detail="state must be 'queued' or 'sent'")
+    return [
+        {
+            "puzzleId": row["puzzle_id"],
+            "source": row["source"],
+            "createdAt": row["created_at"],
+            "sentOn": row["sent_on"],
+            "active": bool(row["active"]),
+        }
+        for row in db.list_puzzles(state)
+    ]
+
+@app.post('/admin/migrations:run', dependencies=[Depends(require_admin_auth)])
 async def run_migrations():
     try:
         db.init_db()
     except Exception:
-        logger.exception("admin/migrate failed")
+        logger.exception("admin/migrations:run failed")
         raise
     return Response(status_code=200)
 
-@app.delete('/submissions/{submission_id}', dependencies=[Depends(require_admin_auth)])
+@app.delete('/admin/submissions/{submission_id}', dependencies=[Depends(require_admin_auth)])
 async def delete_submission(submission_id: int):
     if not db.deactivate_submission(submission_id):
         raise HTTPException(status_code=404, detail="Submission not found")
     return Response(status_code=200)
 
-@app.delete('/puzzles/{puzzle_id}', dependencies=[Depends(require_admin_auth)])
+@app.delete('/admin/puzzles/{puzzle_id}', dependencies=[Depends(require_admin_auth)])
 async def delete_puzzle(puzzle_id: str):
     result = db.deactivate_puzzle(puzzle_id)
     if result == db.PuzzleResult.NOT_FOUND:
@@ -94,7 +129,7 @@ async def delete_puzzle(puzzle_id: str):
         raise HTTPException(status_code=409, detail="Puzzle has active submissions")
     return Response(status_code=200)
 
-@app.post('/puzzles/{puzzle_id}/reactivate', dependencies=[Depends(require_admin_auth)])
+@app.post('/admin/puzzles/{puzzle_id}:reactivate', dependencies=[Depends(require_admin_auth)])
 async def reactivate_puzzle(puzzle_id: str):
     result = db.reactivate_puzzle(puzzle_id)
     if result == db.PuzzleResult.NOT_FOUND:
@@ -103,7 +138,7 @@ async def reactivate_puzzle(puzzle_id: str):
         raise HTTPException(status_code=409, detail="Puzzle is already active")
     return Response(status_code=200)
 
-@app.post('/slack/interactions')
+@app.post('/webhooks/slack')
 async def slack_interactions(request: Request):
     body = await verify_slack_request(request)
     payload = json.loads(parse_qs(body.decode())['payload'][0])
@@ -119,12 +154,12 @@ async def slack_interactions(request: Request):
 
     return Response(status_code=200)
 
-@app.get('/cron/send-leaderboard', dependencies=[Depends(require_admin_auth)])
-async def cron_send_leaderboard():
+@app.post('/admin/leaderboard:send', dependencies=[Depends(require_admin_auth)])
+async def send_leaderboard():
     try:
         board = db.get_leaderboard()
         if not board:
-            logger.info("cron/send-leaderboard: empty leaderboard, nothing to post")
+            logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
         slack_client.chat_postMessage(
@@ -132,6 +167,6 @@ async def cron_send_leaderboard():
             text=format_leaderboard(board),
         )
     except Exception:
-        logger.exception("cron/send-leaderboard failed")
+        logger.exception("admin/leaderboard:send failed")
         raise
     return Response(status_code=200)

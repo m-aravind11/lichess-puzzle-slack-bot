@@ -29,6 +29,16 @@ class SubmissionResult:
     STALE_PUZZLE = "stale_puzzle"
 
 
+class PuzzleSource:
+    CURATED = "curated"
+    RANDOM = "random"
+
+
+class PuzzleState:
+    QUEUED = "queued"
+    SENT = "sent"
+
+
 class PuzzleResult:
     DEACTIVATED = "deactivated"
     REACTIVATED = "reactivated"
