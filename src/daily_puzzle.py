@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 class Constants:
     # /api/puzzle/next?difficulty=easiest (anonymous) skews puzzle rating to
-    # roughly 800-950 - an easier on-ramp than the official daily puzzle,
-    # which can land at any rating.
-    LICHESS_DAILY_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle=mix&difficulty=easiest"
+    # roughly 800-950 - an easier on-ramp than Lichess's own official daily
+    # puzzle, which can land at any rating.
+    LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle=mix&difficulty=easiest"
+    LICHESS_PUZZLE_BY_ID_URL = "https://lichess.org/api/puzzle/{puzzle_id}"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
     FETCH_RETRIES = 2
     FETCH_RETRY_DELAY_SECONDS = 3
@@ -28,25 +29,38 @@ class LichessDailyPuzzle:
         self.LICHESS_OAUTH_TOKEN = os.environ['LICHESS_OAUTH_TOKEN']
         self.SLACK_CHANNEL_ID = os.environ['SLACK_CHANNEL_ID']
 
-    def get_lichess_daily_puzzle(self) -> dict:
+    def _fetch_json_with_retries(self, url: str) -> dict:
         # The cron trigger doesn't retry a failed run on its own, so a couple of
         # in-process retries here are the only thing standing between a transient
         # Lichess hiccup and no puzzle getting posted for the day.
         attempts = Constants.FETCH_RETRIES + 1
         for attempt in range(1, attempts + 1):
-            response = requests.get(Constants.LICHESS_DAILY_PUZZLE_URL)
+            response = requests.get(url)
             try:
                 response.raise_for_status()
                 return response.json()
             except requests.HTTPError:
                 logger.error(
-                    "Lichess daily puzzle fetch failed (attempt %d/%d): %s %s",
+                    "Lichess puzzle fetch failed (attempt %d/%d): %s %s",
                     attempt, attempts, response.status_code, response.text[:500],
                 )
                 if attempt == attempts:
                     raise
                 time.sleep(Constants.FETCH_RETRY_DELAY_SECONDS)
-    
+
+    def get_random_puzzle(self) -> dict:
+        return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL)
+
+    def get_puzzle_by_id(self, puzzle_id: str) -> dict:
+        return self._fetch_json_with_retries(Constants.LICHESS_PUZZLE_BY_ID_URL.format(puzzle_id=puzzle_id))
+
+    def resolve_puzzle(self, daily_puzzle: dict) -> tuple[str, str, list]:
+        pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
+        fen = self.get_fen_from_pgn(pgn)
+        puzzle_id = daily_puzzle['puzzle']['id']
+        san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
+        return fen, puzzle_id, san_solution
+
     def get_pgn_from_daily_puzzle(self,daily_puzzle: dict) -> str:
         return daily_puzzle['game']['pgn']
 
@@ -173,12 +187,14 @@ class LichessDailyPuzzle:
         db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
 
     def _fetch_new_puzzle(self) -> tuple[str, str, list]:
-        daily_puzzle = self.get_lichess_daily_puzzle()
-        pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
-        fen = self.get_fen_from_pgn(pgn)
-        puzzle_id = daily_puzzle['puzzle']['id']
-        san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
-        return fen, puzzle_id, san_solution
+        # Queued puzzles were resolved (fen/solution fetched and validated) when
+        # they were added via POST /admin/puzzles, so this path is a DB read, not
+        # a Lichess round trip.
+        queued = db.get_next_queued_puzzle()
+        if queued:
+            return queued["fen"], queued["puzzle_id"], queued["solution"]
+
+        return self.resolve_puzzle(self.get_random_puzzle())
 
     def _post_and_save_puzzle(self, fen: str, puzzle_id: str, san_solution: list, today: datetime) -> None:
         thread_ts = self.send_puzzle_to_slack(
@@ -190,7 +206,7 @@ class LichessDailyPuzzle:
         )
         db.save_puzzle(
             puzzle_id=puzzle_id,
-            date=today.strftime("%Y-%m-%d"),
+            sent_on=today.strftime("%Y-%m-%d"),
             fen=fen,
             solution=san_solution,
             slack_ts=thread_ts,

@@ -83,6 +83,38 @@ def _0006_add_score_to_submissions(conn) -> None:
         conn.cursor().execute("ALTER TABLE submissions ADD COLUMN score INTEGER NOT NULL DEFAULT 0")
 
 
+def _0007_add_puzzle_queue_to_puzzles(conn) -> None:
+    # Rebuilds puzzles so queued (not yet sent) puzzles can live in it: date
+    # becomes the nullable sent_on (NULL = still queued), which SQLite can't do
+    # with an in-place ALTER. sent_at orders puzzles by when they were actually
+    # posted, since rowid now reflects when they were added, not sent. Existing
+    # rows were all sent, so their date backfills sent_on, sent_at and created_at.
+    if "sent_on" in _table_columns(conn, "puzzles"):
+        return
+
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE puzzles RENAME TO puzzles_old")
+    cur.execute("""
+        CREATE TABLE puzzles (
+            puzzle_id TEXT PRIMARY KEY,
+            fen TEXT NOT NULL,
+            solution TEXT NOT NULL,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            sent_on TEXT,
+            sent_at TEXT,
+            slack_ts TEXT,
+            active INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    cur.execute("""
+        INSERT INTO puzzles (puzzle_id, fen, solution, source, created_at, sent_on, sent_at, slack_ts, active)
+        SELECT puzzle_id, fen, solution, 'random', date, date, date, slack_ts, active
+        FROM puzzles_old ORDER BY rowid
+    """)
+    cur.execute("DROP TABLE puzzles_old")
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -90,6 +122,7 @@ MIGRATIONS = [
     ("0004_soft_delete_support_for_submissions", _0004_soft_delete_support_for_submissions),
     ("0005_add_active_to_puzzles", _0005_add_active_to_puzzles),
     ("0006_add_score_to_submissions", _0006_add_score_to_submissions),
+    ("0007_add_puzzle_queue_to_puzzles", _0007_add_puzzle_queue_to_puzzles),
 ]
 
 

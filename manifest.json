@@ -20,7 +20,7 @@
     "settings": {
         "interactivity": {
             "is_enabled": true,
-            "request_url": "https://lichess-puzzle-slack-bot.vercel.app/slack/interactions"
+            "request_url": "https://lichess-puzzle-slack-bot.vercel.app/webhooks/slack"
         }
     }
 }

@@ -4,7 +4,7 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /` and `POST /slack/interactions` requires:
+Every route below except `GET /` and `POST /webhooks/slack` requires:
 
 ```
 Authorization: Bearer $CRON_SECRET
@@ -15,7 +15,7 @@ Missing or wrong token -> `401 Invalid Bearer Token`. This fails closed: if
 request (nothing can authenticate against a secret that doesn't exist).
 `CRON_SECRET` must be set, in every environment including local dev.
 
-`POST /slack/interactions` is authenticated differently: Slack signs each
+`POST /webhooks/slack` is authenticated differently: Slack signs each
 request (see `src/slack_verify.py`), and a missing/stale/invalid signature
 gets `401`. You won't call this endpoint directly; Slack calls it when a
 user opens the answer modal or submits it.
@@ -28,25 +28,27 @@ Serves the static `index.html`. No auth, no response body documented here.
 
 ---
 
-## `GET /cron/send-puzzle`
+## `POST /admin/dailyPuzzle:send`
 
-Fetches a puzzle from Lichess and posts it to the configured Slack channel.
-Meant to be hit once a day by a cron trigger, but safe to retrigger; see
-`?force` and `?new_puzzle` below.
+Fetches a puzzle and posts it to the configured Slack channel. Meant to be
+hit once a day by a cron trigger, but safe to retrigger; see `?force` and
+`?newPuzzle` below. Prefers the oldest unsent entry in the curated queue
+(see `POST /admin/puzzles`); falls back to a random Lichess puzzle
+when that queue is empty.
 
 **Query params** (both optional, default `false`):
 
 | Param        | Effect |
 |--------------|--------|
-| `force`      | If today's puzzle was already sent, **resend that same puzzle** (re-post to Slack, no new Lichess fetch, no new DB row). Use this for a retry after a network/Slack failure. If nothing active exists for today (e.g. it was deactivated), falls back to generating a fresh one. |
-| `new_puzzle` | Always fetches a **different** puzzle from Lichess and posts+saves it, regardless of whether one was already sent today. Lichess has no stable "today's puzzle" id (unlike the official daily puzzle), so this is the explicit way to ask for a different one rather than a resend. |
+| `force`      | If today's puzzle was already sent, **resend that same puzzle** (re-post to Slack, no new fetch, no new DB row). Use this for a retry after a network/Slack failure. If nothing active exists for today (e.g. it was deactivated), falls back to generating a fresh one. |
+| `newPuzzle` | Always fetches a **different** puzzle and posts+saves it, regardless of whether one was already sent today. Lichess has no stable "today's puzzle" id (unlike the official daily puzzle), so this is the explicit way to ask for a different one rather than a resend. |
 
 With neither flag: if a puzzle was already sent today (active or
 deactivated), this is a no-op. It protects against a duplicate cron trigger
 spamming the channel with a second, different random puzzle.
 
-If both flags are passed, `new_puzzle` wins outright; `force` is checked only
-when `new_puzzle` is absent (or set to `false`).
+If both flags are passed, `newPuzzle` wins outright; `force` is checked only
+when `newPuzzle` is absent (or set to `false`).
 
 **Responses**
 
@@ -55,16 +57,68 @@ when `new_puzzle` is absent (or set to `false`).
 - `500`: Lichess fetch failed after retries, or an unexpected error
 
 ```
-curl "https://.../cron/send-puzzle" \
+curl -X POST "https://.../admin/dailyPuzzle:send" \
   -H "Authorization: Bearer $CRON_SECRET"
 
-curl "https://.../cron/send-puzzle?force=true" \
+curl -X POST "https://.../admin/dailyPuzzle:send?force=true" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `GET /cron/send-leaderboard`
+## `POST /admin/puzzles`
+
+Queues a hand-picked Lichess puzzle id to be sent ahead of the random fetch,
+oldest first. The puzzle is fetched and resolved from Lichess immediately
+(not at send time), so a bad id is rejected right away. A queued puzzle is a
+row in `puzzles` with no `sent_on` yet; `DELETE /admin/puzzles/{puzzle_id}`
+takes it out of the queue and `:reactivate` puts it back.
+
+**Body** (`application/json`)
+
+- `puzzleId` (string, required)
+
+**Responses**
+
+- `201`: queued
+- `400`: `puzzleId` missing/empty
+- `401`: bad/missing bearer token
+- `409`: that puzzle already exists (queued or already sent)
+- `502`: Lichess couldn't fetch that puzzle id
+
+```
+curl -X POST "https://.../admin/puzzles" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"puzzleId": "abc123"}'
+```
+
+---
+
+## `GET /admin/puzzles`
+
+Lists puzzles, queued and sent.
+
+**Query params**
+
+- `state` (optional): `queued` (oldest first, i.e. send order) or `sent`
+  (in the order they were posted). Omit for all.
+
+**Responses**
+
+- `200`: array of `{puzzleId, source, createdAt, sentOn, active}`, where
+  `source` is `curated` or `random` and `sentOn` is `null` while queued
+- `400`: unknown `state`
+- `401`: bad/missing bearer token
+
+```
+curl "https://.../admin/puzzles?state=queued" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+---
+
+## `POST /admin/leaderboard:send`
 
 Posts current standings to the Slack channel. No-ops (still `200`) if the
 leaderboard is empty (nobody has submitted anything yet).
@@ -76,13 +130,13 @@ leaderboard is empty (nobody has submitted anything yet).
 - `500`: unexpected error
 
 ```
-curl "https://.../cron/send-leaderboard" \
+curl -X POST "https://.../admin/leaderboard:send" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `POST /admin/migrate`
+## `POST /admin/migrations:run`
 
 Runs any pending schema migrations (`src/migrations.py`) against the DB. Not
 run automatically on startup; trigger manually after deploying a schema
@@ -95,13 +149,13 @@ change.
 - `500`: migration failed
 
 ```
-curl -X POST "https://.../admin/migrate" \
+curl -X POST "https://.../admin/migrations:run" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `DELETE /submissions/{submission_id}`
+## `DELETE /admin/submissions/{submission_id}`
 
 Soft-deletes a submission by its numeric id (removes it from the leaderboard
 and frees the user to resubmit for that puzzle).
@@ -117,13 +171,13 @@ and frees the user to resubmit for that puzzle).
 - `404`: no such submission (or already deleted)
 
 ```
-curl -X DELETE "https://.../submissions/42" \
+curl -X DELETE "https://.../admin/submissions/42" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `DELETE /puzzles/{puzzle_id}`
+## `DELETE /admin/puzzles/{puzzle_id}`
 
 Soft-deletes a puzzle by its Lichess puzzle id. Refuses if the puzzle still
 has active submissions against it (those feed the leaderboard, so deactivate
@@ -141,15 +195,15 @@ the submissions first, or use the reactivate endpoint if this was a mistake).
 - `409`: puzzle has active submissions, refused
 
 ```
-curl -X DELETE "https://.../puzzles/abc123" \
+curl -X DELETE "https://.../admin/puzzles/abc123" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `POST /puzzles/{puzzle_id}/reactivate`
+## `POST /admin/puzzles/{puzzle_id}:reactivate`
 
-Reverses a soft-delete from `DELETE /puzzles/{puzzle_id}`.
+Reverses a soft-delete from `DELETE /admin/puzzles/{puzzle_id}`.
 
 **Path params**
 
@@ -163,13 +217,13 @@ Reverses a soft-delete from `DELETE /puzzles/{puzzle_id}`.
 - `409`: puzzle is already active
 
 ```
-curl -X POST "https://.../puzzles/abc123/reactivate" \
+curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
 ---
 
-## `POST /slack/interactions`
+## `POST /webhooks/slack`
 
 Slack's interactivity endpoint. Receives both the "Submit Answer" button
 click (`block_actions`) and the answer modal submission (`view_submission`).

@@ -6,16 +6,19 @@ there's a points-based leaderboard.
 
 ## How it works
 
-1. The `/cron/send-puzzle` cron fetches the day's puzzle from Lichess and
-   posts one Slack message: the board image (linked straight from
+1. The `/admin/dailyPuzzle:send` cron fetches the day's puzzle - the oldest
+   entry in the curated queue (`POST /admin/puzzles`) if there is one,
+   otherwise a random Lichess puzzle - and posts one Slack message: the board
+   image (linked straight from
    [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus
    a "Submit Answer" button. The puzzle's FEN, solution, and this message's
-   `ts` are saved to the DB, keyed by puzzle id.
-2. Clicking the button opens a modal (`POST /slack/interactions`). Submitting
+   `ts` are saved to the DB, keyed by puzzle id. Queued and sent puzzles share
+   the `puzzles` table; `sent_on` is empty until a puzzle is posted.
+2. Clicking the button opens a modal (`POST /webhooks/slack`). Submitting
    it checks the moves against the solution, scores it, records the
    submission, and DMs the result. A correct answer also gets a "solved it in
    M:SS (+N pts)" reply posted in the puzzle's thread.
-3. `/cron/send-leaderboard` posts current standings to the channel.
+3. `/admin/leaderboard:send` posts current standings to the channel.
 
 See [API.md](API.md) for the full HTTP API (routes, auth, params, responses).
 
@@ -27,7 +30,7 @@ added seconds to every cold start); trigger them after deploying a schema
 change:
 
 ```
-curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrate \
+curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrations:run \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
@@ -71,7 +74,7 @@ export CRON_SECRET=...                  # any string; admin routes reject all re
 uvicorn app:app --reload --app-dir src
 ```
 
-Slack needs a public HTTPS URL for `/slack/interactions` - use ngrok locally
+Slack needs a public HTTPS URL for `/webhooks/slack` - use ngrok locally
 and point the Slack app's Request URL at it. To configure the Slack app
 itself, paste `manifest.json` into the App Manifest tab at api.slack.com/apps
 (swap in your host in the request URL) and reinstall.

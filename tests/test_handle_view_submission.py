@@ -20,7 +20,7 @@ def _payload(moves_text: str, puzzle_id="p1", user_id="U1", user_name="alice") -
 def _puzzle(slack_ts=None) -> dict:
     return {
         "puzzle_id": "p1",
-        "date": "2024-01-01",
+        "sent_on": "2024-01-01",
         "fen": "startpos",
         "solution": ["e4"],
         "slack_ts": slack_ts,
