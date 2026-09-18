@@ -124,13 +124,21 @@ def test_queue_puzzle_rejects_duplicate(client, monkeypatch):
 
 
 def test_list_puzzles_with_valid_token_calls_through(client, monkeypatch):
+<<<<<<< HEAD
     row = {"puzzle_id": "abc123", "source": "curated", "added_at": "2024-01-01T00:00:00", "posted_at": None, "active": 1}
+=======
+    row = {"puzzle_id": "abc123", "source": "curated", "created_at": "2024-01-01T00:00:00", "sent_on": None, "active": 1}
+>>>>>>> c9d52b4794b1ed04867c2634974d4317dbdf6739
     monkeypatch.setattr(db, "list_puzzles", MagicMock(return_value=[row]))
     response = client.get("/admin/puzzles", params={"state": "queued"}, headers={"Authorization": "Bearer s3cr3t"})
     assert response.status_code == 200
     db.list_puzzles.assert_called_once_with("queued")
     assert response.json() == [
+<<<<<<< HEAD
         {"puzzleId": "abc123", "source": "curated", "addedAt": "2024-01-01T00:00:00", "postedAt": None, "active": True},
+=======
+        {"puzzleId": "abc123", "source": "curated", "createdAt": "2024-01-01T00:00:00", "sentOn": None, "active": True},
+>>>>>>> c9d52b4794b1ed04867c2634974d4317dbdf6739
     ]
 
 

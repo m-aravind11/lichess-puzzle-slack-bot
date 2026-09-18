@@ -206,6 +206,10 @@ class LichessDailyPuzzle:
         )
         db.save_puzzle(
             puzzle_id=puzzle_id,
+<<<<<<< HEAD
+=======
+            sent_on=today.strftime("%Y-%m-%d"),
+>>>>>>> c9d52b4794b1ed04867c2634974d4317dbdf6739
             fen=fen,
             solution=san_solution,
             slack_ts=thread_ts,
