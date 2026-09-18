@@ -92,14 +92,14 @@ async def queue_puzzle(request: Request):
 
 @app.get('/admin/puzzles', dependencies=[Depends(require_admin_auth)])
 async def list_puzzles(state: str | None = None):
-    if state not in (None, PuzzleState.QUEUED, PuzzleState.SENT):
-        raise HTTPException(status_code=400, detail="state must be 'queued' or 'sent'")
+    if state not in (None, PuzzleState.QUEUED, PuzzleState.POSTED):
+        raise HTTPException(status_code=400, detail="state must be 'queued' or 'posted'")
     return [
         {
             "puzzleId": row["puzzle_id"],
             "source": row["source"],
-            "createdAt": row["created_at"],
-            "sentOn": row["sent_on"],
+            "addedAt": row["added_at"],
+            "postedAt": row["posted_at"],
             "active": bool(row["active"]),
         }
         for row in db.list_puzzles(state)

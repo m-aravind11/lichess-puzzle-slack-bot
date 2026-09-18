@@ -36,7 +36,7 @@ class PuzzleSource:
 
 class PuzzleState:
     QUEUED = "queued"
-    SENT = "sent"
+    POSTED = "posted"
 
 
 class PuzzleResult:

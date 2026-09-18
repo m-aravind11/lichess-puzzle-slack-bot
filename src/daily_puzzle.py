@@ -2,7 +2,7 @@ import io
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 
 import chess.pgn
@@ -206,7 +206,6 @@ class LichessDailyPuzzle:
         )
         db.save_puzzle(
             puzzle_id=puzzle_id,
-            sent_on=today.strftime("%Y-%m-%d"),
             fen=fen,
             solution=san_solution,
             slack_ts=thread_ts,
@@ -217,7 +216,8 @@ class LichessDailyPuzzle:
         self._post_and_save_puzzle(fen, puzzle_id, san_solution, today)
 
     async def handle_puzzle_generation_and_sending(self, force: bool = False, new_puzzle: bool = False) -> None:
-        today = datetime.now()
+        # UTC, to match the date part of posted_at (see PuzzleQueries.EXISTS_FOR_DATE).
+        today = datetime.now(timezone.utc)
         date_str = today.strftime("%Y-%m-%d")
 
         if new_puzzle:

@@ -12,8 +12,9 @@ there's a points-based leaderboard.
    image (linked straight from
    [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus
    a "Submit Answer" button. The puzzle's FEN, solution, and this message's
-   `ts` are saved to the DB, keyed by puzzle id. Queued and sent puzzles share
-   the `puzzles` table; `sent_on` is empty until a puzzle is posted.
+   `ts` are saved to the DB, keyed by puzzle id. Queued and posted puzzles share
+   the `puzzles` table; `posted_at` is empty until a puzzle is posted, and
+   its UTC date is the puzzle's day.
 2. Clicking the button opens a modal (`POST /webhooks/slack`). Submitting
    it checks the moves against the solution, scores it, records the
    submission, and DMs the result. A correct answer also gets a "solved it in
