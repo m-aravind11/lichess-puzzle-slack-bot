@@ -115,6 +115,28 @@ def _0007_add_puzzle_queue_to_puzzles(conn) -> None:
     cur.execute("DROP TABLE puzzles_old")
 
 
+def _0008_simplify_puzzle_timestamps(conn) -> None:
+    # Collapses 0007's three time columns into two: added_at (when the row was
+    # created) and posted_at (when it went to Slack, NULL = queued). The puzzle's
+    # day is just posted_at's date, so sent_on goes. 0007 could only backfill
+    # the bare date; slack_ts is the Slack post's epoch time, so rows that have
+    # one get their real post time (the latest post, if the puzzle was resent).
+    # Pre-queue puzzles were fetched at send time, so added_at is that moment too.
+    if "posted_at" in _table_columns(conn, "puzzles"):
+        return
+
+    cur = conn.cursor()
+    cur.execute("ALTER TABLE puzzles RENAME COLUMN created_at TO added_at")
+    cur.execute("ALTER TABLE puzzles RENAME COLUMN sent_at TO posted_at")
+    cur.execute("""
+        UPDATE puzzles
+        SET posted_at = strftime('%Y-%m-%dT%H:%M:%f+00:00', CAST(slack_ts AS REAL), 'unixepoch'),
+            added_at = strftime('%Y-%m-%dT%H:%M:%f+00:00', CAST(slack_ts AS REAL), 'unixepoch')
+        WHERE slack_ts IS NOT NULL AND length(posted_at) = 10
+    """)
+    cur.execute("ALTER TABLE puzzles DROP COLUMN sent_on")
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -123,6 +145,7 @@ MIGRATIONS = [
     ("0005_add_active_to_puzzles", _0005_add_active_to_puzzles),
     ("0006_add_score_to_submissions", _0006_add_score_to_submissions),
     ("0007_add_puzzle_queue_to_puzzles", _0007_add_puzzle_queue_to_puzzles),
+    ("0008_simplify_puzzle_timestamps", _0008_simplify_puzzle_timestamps),
 ]
 
 

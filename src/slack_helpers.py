@@ -32,7 +32,7 @@ def format_seconds(seconds: float | None) -> str:
 
 
 def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int) -> str:
-    puzzle_date = datetime.strptime(puzzle['sent_on'], '%Y-%m-%d').strftime('%B %d, %Y')
+    puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
     result_text = (
         f"Correct - nice work! +{score} points" if correct

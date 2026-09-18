@@ -17,7 +17,7 @@ QUEUED_PUZZLE = {
 
 EXISTING = {
     "puzzle_id": "p1",
-    "sent_on": "2024-01-01",
+    "posted_at": "2024-01-01T09:00:00+00:00",
     "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
     "solution": ["Nf3"],
     "slack_ts": "1600000000.0",
