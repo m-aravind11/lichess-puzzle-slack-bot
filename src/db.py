@@ -82,30 +82,68 @@ def _now() -> str:
 
 
 @_retry_stale_connection
-def save_puzzle(puzzle_id: str, date: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
-    """Creates the puzzle row the first time it's posted. A resend of the same
-    puzzle_id (e.g. testing, a duplicate cron trigger) is a no-op, so existing
-    submissions stay timed against the original post rather than a later one.
-    puzzle_id is the primary key, so this also covers a resend after the row
-    was soft-deleted (deactivate_puzzle) - the active-only check above won't
-    see it, but the row's still there, and the plain INSERT would otherwise
-    hit an IntegrityError on that key instead of quietly no-op'ing like every
-    other resend does."""
+def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
+    """Records a puzzle as posted now: inserts it if it was fetched fresh, or
+    marks it posted if it was queued. A resend of an already-posted puzzle_id
+    (active or deactivated) is a no-op, so existing submissions stay timed
+    against the original post rather than a later one."""
+    now = _now()
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(PuzzleQueries.GET_ACTIVE_BY_ID, (puzzle_id,))
-        if cur.fetchone() is not None:
-            logger.info("save_puzzle: %s already active, no-op", puzzle_id)
+        cur.execute(
+            PuzzleQueries.UPSERT_POSTED,
+            (puzzle_id, fen, json.dumps(solution), PuzzleSource.RANDOM, now, now, slack_ts),
+        )
+        if cur.rowcount == 0:
+            logger.info("save_puzzle: %s already posted, no-op", puzzle_id)
             return
-        try:
-            cur.execute(
-                PuzzleQueries.INSERT,
-                (puzzle_id, date, fen, json.dumps(solution), slack_ts),
-            )
-        except turso_serverless.IntegrityError:
-            logger.info("save_puzzle: %s already exists (likely deactivated), no-op", puzzle_id)
-            return
-        logger.info("save_puzzle: inserted %s (date=%s, slack_ts=%s)", puzzle_id, date, slack_ts)
+        logger.info("save_puzzle: %s posted (posted_at=%s, slack_ts=%s)", puzzle_id, now, slack_ts)
+
+
+@_retry_stale_connection
+def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
+    """Queues a hand-picked puzzle to be posted ahead of the random fetch.
+    Returns False if the puzzle_id already exists, queued or posted."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            PuzzleQueries.INSERT_QUEUED,
+            (puzzle_id, fen, json.dumps(solution), PuzzleSource.CURATED, _now()),
+        )
+        if cur.rowcount == 0:
+            logger.info("queue_puzzle: %s already exists, no-op", puzzle_id)
+            return False
+        logger.info("queue_puzzle: queued %s", puzzle_id)
+        return True
+
+
+@_retry_stale_connection
+def get_next_queued_puzzle() -> dict | None:
+    """The oldest active queued puzzle. It stays queued until save_puzzle marks
+    it posted, so a failed run picks the same one up again next time."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(PuzzleQueries.GET_NEXT_QUEUED)
+        row = cur.fetchone()
+        if row is None:
+            return None
+        puzzle_id, fen, solution = row
+        return {"puzzle_id": puzzle_id, "fen": fen, "solution": json.loads(solution)}
+
+
+_LIST_QUERIES = {
+    None: PuzzleQueries.LIST_ALL,
+    PuzzleState.QUEUED: PuzzleQueries.LIST_QUEUED,
+    PuzzleState.POSTED: PuzzleQueries.LIST_POSTED,
+}
+
+
+@_retry_stale_connection
+def list_puzzles(state: str | None = None) -> list:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(_LIST_QUERIES[state])
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
 
 
 @_retry_stale_connection
@@ -123,7 +161,7 @@ def puzzle_sent_for_date(date: str) -> bool:
 def _row_to_puzzle(row: dict) -> dict:
     return {
         "puzzle_id": row["puzzle_id"],
-        "date": row["date"],
+        "posted_at": row["posted_at"],
         "fen": row["fen"],
         "solution": json.loads(row["solution"]),
         "slack_ts": row["slack_ts"],
@@ -153,9 +191,10 @@ def update_puzzle_slack_ts(puzzle_id: str, slack_ts: str | None) -> None:
         _puzzle_cache[puzzle_id]["slack_ts"] = slack_ts
 
 
-# Puzzle rows are only ever inserted, never updated (see queries.py) - once
-# fetched, a puzzle_id's data can't go stale, so it's safe to cache for the
-# life of the process instead of round-tripping to Turso on every submission.
+# Only posted puzzles are cached (GET_BY_ID excludes queued ones), and a posted
+# puzzle's fen/solution never change - slack_ts, the one field a resend updates,
+# is refreshed in update_puzzle_slack_ts. So it's safe to cache for the life of
+# the process instead of round-tripping to Turso on every submission.
 _puzzle_cache: dict = {}
 
 

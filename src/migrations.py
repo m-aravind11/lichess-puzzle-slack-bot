@@ -115,7 +115,6 @@ def _0007_add_puzzle_queue_to_puzzles(conn) -> None:
     cur.execute("DROP TABLE puzzles_old")
 
 
-<<<<<<< HEAD
 def _0008_simplify_puzzle_timestamps(conn) -> None:
     # Collapses 0007's three time columns into two: added_at (when the row was
     # created) and posted_at (when it went to Slack, NULL = queued). The puzzle's
@@ -138,8 +137,6 @@ def _0008_simplify_puzzle_timestamps(conn) -> None:
     cur.execute("ALTER TABLE puzzles DROP COLUMN sent_on")
 
 
-=======
->>>>>>> c9d52b4794b1ed04867c2634974d4317dbdf6739
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -148,10 +145,7 @@ MIGRATIONS = [
     ("0005_add_active_to_puzzles", _0005_add_active_to_puzzles),
     ("0006_add_score_to_submissions", _0006_add_score_to_submissions),
     ("0007_add_puzzle_queue_to_puzzles", _0007_add_puzzle_queue_to_puzzles),
-<<<<<<< HEAD
     ("0008_simplify_puzzle_timestamps", _0008_simplify_puzzle_timestamps),
-=======
->>>>>>> c9d52b4794b1ed04867c2634974d4317dbdf6739
 ]
 
 
