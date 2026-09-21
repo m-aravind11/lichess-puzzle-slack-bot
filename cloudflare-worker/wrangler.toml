@@ -1,0 +1,8 @@
+name = "lichess-puzzle-slack-bot-cron"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[triggers]
+crons = ["0 11 * * *", "30 11 * * *"]
+
+# Set with: wrangler secret put CRON_SECRET
