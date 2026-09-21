@@ -23,19 +23,20 @@ there's a points-based leaderboard.
 
 See [API.md](API.md) for the full HTTP API (routes, auth, params, responses).
 
-Storage is Turso (hosted libSQL), not a local SQLite file - Vercel's
-serverless functions have a read-only filesystem outside `/tmp`, and `/tmp`
-doesn't persist between invocations. Schema migrations live in
-`src/migrations.py` and aren't run automatically on startup (that check alone
-added seconds to every cold start); trigger them after deploying a schema
-change:
+## Storage
+
+Turso (hosted libSQL), not a local SQLite file - Vercel's serverless
+functions have a read-only filesystem outside `/tmp`, and `/tmp` doesn't
+persist between invocations. Schema migrations live in `src/migrations.py`
+and aren't run automatically on startup (that check alone added seconds to
+every cold start); trigger them after deploying a schema change:
 
 ```
 curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrations:run \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 
-## Scoring and functionality
+## Scoring
 
 A correct answer is worth `MAX_SCORE` (10) points, decayed by how long after
 the puzzle was posted it was submitted - points halve every
@@ -48,30 +49,33 @@ for a measurement that isn't there. See `src/scoring.py`.
 The leaderboard ranks by total points, ties broken by fastest average solve
 time (correct answers only).
 
+## Answer modal
+
 The modal only asks for the player's own moves, one per ply of theirs, in
 order - not the opponent's replies. Its label states the puzzle length
 directly ("This is a 3-move puzzle", the standard "mate in N" sense -
 `open_answer_modal` reads it off `solution[0::2]`) so the user knows where
-their line ends. Move checking
-(`LichessDailyPuzzle.check_answer`) parses them with `python-chess` and
-compares to the solution's moves at those plies (`solution[0::2]`) using
-parsed `Move` objects instead of raw strings, so `Qe2`, `Qxe2`, `Q*e2`, and
-`qxe2#` all count as the same move. The opponent's replies (`solution[1::2]`)
-come straight from the puzzle's own solution and are never something the
-user has to guess - Lichess's solution only records one of what can be
-several equally valid opponent replies, so requiring an exact guess there
-would reject correct lines.
+their line ends.
+
+Move checking (`LichessDailyPuzzle.check_answer`) parses submitted moves with
+`python-chess` and compares them to the solution's moves at those plies
+(`solution[0::2]`) using parsed `Move` objects instead of raw strings, so
+`Qe2`, `Qxe2`, `Q*e2`, and `qxe2#` all count as the same move. The opponent's
+replies (`solution[1::2]`) come straight from the puzzle's own solution and
+are never something the user has to guess - Lichess's solution only records
+one of what can be several equally valid opponent replies, so requiring an
+exact guess there would reject correct lines.
 
 ## Local setup
 
 ```
 pip install -r requirements-dev.txt
-export LICHESS_OAUTH_TOKEN=xoxb-...     # Slack bot token (historical name)
+export LICHESS_OAUTH_TOKEN=xoxb-...  # Slack bot token (historical name)
 export SLACK_CHANNEL_ID=...
 export SLACK_SIGNING_SECRET=...
 export TURSO_DATABASE_URL=libsql://...
 export TURSO_AUTH_TOKEN=...
-export CRON_SECRET=...                  # any string; admin routes reject all requests without it
+export CRON_SECRET=...               # any string; admin routes reject all requests without it
 uvicorn app:app --reload --app-dir src
 ```
 
