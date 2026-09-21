@@ -1,6 +1,7 @@
 import io
 import logging
 import os
+import random
 import time
 from datetime import datetime, timezone
 import requests
@@ -15,10 +16,11 @@ from constants import SlackActions
 logger = logging.getLogger(__name__)
 
 class Constants:
-    # /api/puzzle/next?difficulty=easiest (anonymous) skews puzzle rating to
-    # roughly 800-950 - an easier on-ramp than Lichess's own official daily
+    # /api/puzzle/next?difficulty=easier (anonymous) skews puzzle rating to
+    # roughly 1150-1300 - an easier on-ramp than Lichess's own official daily
     # puzzle, which can land at any rating.
-    LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle=mix&difficulty=easiest"
+    PUZZLE_THEMES = ("mateIn2", "mateIn3")
+    LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty=easier"
     LICHESS_PUZZLE_BY_ID_URL = "https://lichess.org/api/puzzle/{puzzle_id}"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
     FETCH_RETRIES = 2
@@ -49,7 +51,8 @@ class LichessDailyPuzzle:
                 time.sleep(Constants.FETCH_RETRY_DELAY_SECONDS)
 
     def get_random_puzzle(self) -> dict:
-        return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL)
+        theme = random.choice(Constants.PUZZLE_THEMES)
+        return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL.format(theme=theme))
 
     def get_puzzle_by_id(self, puzzle_id: str) -> dict:
         return self._fetch_json_with_retries(Constants.LICHESS_PUZZLE_BY_ID_URL.format(puzzle_id=puzzle_id))
@@ -131,14 +134,14 @@ class LichessDailyPuzzle:
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
 
-    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str,num_moves: int) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str,num_moves: int,is_mate: bool = False) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
-        move_label = "move" if num_moves == 1 else "moves"
+        move_label = f"mate in {num_moves}" if is_mate else f"{num_moves} {'move' if num_moves == 1 else 'moves'}"
 
         try:
             root = slack_client.chat_postMessage(
                 channel=self.SLACK_CHANNEL_ID,
-                text=f"<!channel> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play, {num_moves} {move_label}.",
+                text=f"<!channel> *Puzzle for the day ({date_str})* - {self.whose_move(board).upper()} to play, {move_label}.",
                 blocks=[
                     {
                         "type": "section",
@@ -146,7 +149,7 @@ class LichessDailyPuzzle:
                             "type": "mrkdwn",
                             "text": (
                                 f"<!channel> *Puzzle for the day ({date_str})*\n"
-                                f"`{self.whose_move(board).upper()} TO PLAY · {num_moves} {move_label.upper()}`\n\n"
+                                f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`\n\n"
                                 f"Click *Submit Answer* below and enter only your own moves, e.g. `Nf3 Bb5` "
                                 f"(your opponent's replies are added automatically). You'll get the result by DM."
                             ),
@@ -183,6 +186,7 @@ class LichessDailyPuzzle:
             existing['puzzle_id'],
             self.get_image_link_from_fen(self.encode_fen_for_url(existing['fen'])),
             len(existing['solution'][0::2]),
+            existing['solution'][-1].endswith('#'),
         )
         db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
 
@@ -203,6 +207,7 @@ class LichessDailyPuzzle:
             puzzle_id,
             self.get_image_link_from_fen(self.encode_fen_for_url(fen)),
             len(san_solution[0::2]),
+            san_solution[-1].endswith('#'),
         )
         db.save_puzzle(
             puzzle_id=puzzle_id,
