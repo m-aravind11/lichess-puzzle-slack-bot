@@ -1,0 +1,174 @@
+{
+  "info": {
+    "name": "Lichess Puzzle Slack Bot - Admin",
+    "description": "Admin endpoints (see API.md). Set the `cronSecret` collection variable to your CRON_SECRET before sending anything; every request inherits bearer auth from the collection. Change `baseUrl` to http://localhost:8000 for local dev.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{cronSecret}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://lichess-puzzle-slack-bot.vercel.app", "type": "string" },
+    { "key": "cronSecret", "value": "", "type": "secret" },
+    { "key": "puzzleId", "value": "abc123", "type": "string" },
+    { "key": "submissionId", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Puzzles",
+      "item": [
+        {
+          "name": "Queue puzzle",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"puzzleId\": \"{{puzzleId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzles",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzles"]
+            },
+            "description": "Fetches the puzzle from Lichess and queues it. 201 queued, 400 missing puzzleId, 409 already exists, 502 Lichess couldn't fetch it."
+          }
+        },
+        {
+          "name": "List puzzles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzles?state=queued",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzles"],
+              "query": [
+                { "key": "state", "value": "queued", "description": "queued | posted - untick to list all" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete puzzle",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzles/{{puzzleId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzles", "{{puzzleId}}"]
+            },
+            "description": "Soft-deletes a puzzle (a queued one leaves the queue). 409 if it has active submissions."
+          }
+        },
+        {
+          "name": "Reactivate puzzle",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzles/{{puzzleId}}:reactivate",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzles", "{{puzzleId}}:reactivate"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Daily puzzle",
+      "item": [
+        {
+          "name": "Send daily puzzle",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/dailyPuzzle:send",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dailyPuzzle:send"]
+            },
+            "description": "No-op if today's puzzle was already sent. Posts to the real Slack channel."
+          }
+        },
+        {
+          "name": "Send daily puzzle (force resend)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/dailyPuzzle:send?force=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dailyPuzzle:send"],
+              "query": [{ "key": "force", "value": "true" }]
+            },
+            "description": "Re-posts today's puzzle to Slack."
+          }
+        },
+        {
+          "name": "Send daily puzzle (new puzzle)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/dailyPuzzle:send?newPuzzle=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dailyPuzzle:send"],
+              "query": [{ "key": "newPuzzle", "value": "true" }]
+            },
+            "description": "Posts a different puzzle even if one was already sent today (takes the next queued one first)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Leaderboard",
+      "item": [
+        {
+          "name": "Send leaderboard",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/leaderboard:send",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "leaderboard:send"]
+            },
+            "description": "Posts current standings to the real Slack channel."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Submissions",
+      "item": [
+        {
+          "name": "Delete submission",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/submissions/{{submissionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "submissions", "{{submissionId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Migrations",
+      "item": [
+        {
+          "name": "Run migrations",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/migrations:run",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "migrations:run"]
+            },
+            "description": "Applies pending schema migrations. Take a DB backup first when a migration rebuilds a table (0007 does)."
+          }
+        }
+      ]
+    }
+  ]
+}

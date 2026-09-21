@@ -71,7 +71,7 @@ curl -X POST "https://.../admin/dailyPuzzle:send?force=true" \
 Queues a hand-picked Lichess puzzle id to be sent ahead of the random fetch,
 oldest first. The puzzle is fetched and resolved from Lichess immediately
 (not at send time), so a bad id is rejected right away. A queued puzzle is a
-row in `puzzles` with no `sent_on` yet; `DELETE /admin/puzzles/{puzzle_id}`
+row in `puzzles` with no `posted_at` yet; `DELETE /admin/puzzles/{puzzle_id}`
 takes it out of the queue and `:reactivate` puts it back.
 
 **Body** (`application/json`)
@@ -83,7 +83,7 @@ takes it out of the queue and `:reactivate` puts it back.
 - `201`: queued
 - `400`: `puzzleId` missing/empty
 - `401`: bad/missing bearer token
-- `409`: that puzzle already exists (queued or already sent)
+- `409`: that puzzle already exists (queued or already posted)
 - `502`: Lichess couldn't fetch that puzzle id
 
 ```
@@ -97,17 +97,18 @@ curl -X POST "https://.../admin/puzzles" \
 
 ## `GET /admin/puzzles`
 
-Lists puzzles, queued and sent.
+Lists puzzles, queued and posted.
 
 **Query params**
 
-- `state` (optional): `queued` (oldest first, i.e. send order) or `sent`
-  (in the order they were posted). Omit for all.
+- `state` (optional): `queued` (oldest first, i.e. the order they'll be
+  posted) or `posted` (in the order they were posted). Omit for all.
 
 **Responses**
 
-- `200`: array of `{puzzleId, source, createdAt, sentOn, active}`, where
-  `source` is `curated` or `random` and `sentOn` is `null` while queued
+- `200`: array of `{puzzleId, source, addedAt, postedAt, active}`, where
+  `source` is `curated` or `random`, `addedAt` is when it was queued (or
+  fetched, for random ones), and `postedAt` is `null` while queued
 - `400`: unknown `state`
 - `401`: bad/missing bearer token
 

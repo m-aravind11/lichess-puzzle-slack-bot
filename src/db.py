@@ -82,28 +82,28 @@ def _now() -> str:
 
 
 @_retry_stale_connection
-def save_puzzle(puzzle_id: str, sent_on: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
-    """Records a puzzle as sent: inserts it if it was fetched fresh, or marks it
-    sent if it was queued. A resend of an already-sent puzzle_id (active or
-    deactivated) is a no-op, so existing submissions stay timed against the
-    original post rather than a later one."""
+def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
+    """Records a puzzle as posted now: inserts it if it was fetched fresh, or
+    marks it posted if it was queued. A resend of an already-posted puzzle_id
+    (active or deactivated) is a no-op, so existing submissions stay timed
+    against the original post rather than a later one."""
     now = _now()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            PuzzleQueries.UPSERT_SENT,
-            (puzzle_id, fen, json.dumps(solution), PuzzleSource.RANDOM, now, sent_on, now, slack_ts),
+            PuzzleQueries.UPSERT_POSTED,
+            (puzzle_id, fen, json.dumps(solution), PuzzleSource.RANDOM, now, now, slack_ts),
         )
         if cur.rowcount == 0:
-            logger.info("save_puzzle: %s already sent, no-op", puzzle_id)
+            logger.info("save_puzzle: %s already posted, no-op", puzzle_id)
             return
-        logger.info("save_puzzle: %s sent (sent_on=%s, slack_ts=%s)", puzzle_id, sent_on, slack_ts)
+        logger.info("save_puzzle: %s posted (posted_at=%s, slack_ts=%s)", puzzle_id, now, slack_ts)
 
 
 @_retry_stale_connection
 def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
-    """Queues a hand-picked puzzle to be sent ahead of the random fetch. Returns
-    False if the puzzle_id already exists, queued or sent."""
+    """Queues a hand-picked puzzle to be posted ahead of the random fetch.
+    Returns False if the puzzle_id already exists, queued or posted."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -120,7 +120,7 @@ def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
 @_retry_stale_connection
 def get_next_queued_puzzle() -> dict | None:
     """The oldest active queued puzzle. It stays queued until save_puzzle marks
-    it sent, so a failed run picks the same one up again next time."""
+    it posted, so a failed run picks the same one up again next time."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.GET_NEXT_QUEUED)
@@ -134,7 +134,7 @@ def get_next_queued_puzzle() -> dict | None:
 _LIST_QUERIES = {
     None: PuzzleQueries.LIST_ALL,
     PuzzleState.QUEUED: PuzzleQueries.LIST_QUEUED,
-    PuzzleState.SENT: PuzzleQueries.LIST_SENT,
+    PuzzleState.POSTED: PuzzleQueries.LIST_POSTED,
 }
 
 
@@ -148,7 +148,7 @@ def list_puzzles(state: str | None = None) -> list:
 
 @_retry_stale_connection
 def puzzle_sent_for_date(date: str) -> bool:
-    """True if any puzzle (active or deactivated) was already posted for this
+    """True if any puzzle (active or deactivated) was already posted on this UTC
     date - the daily fetch picks a random puzzle_id each call, so unlike
     save_puzzle's id-based dedup, a retriggered cron needs this date check to
     avoid posting a second, different puzzle for the same day."""
@@ -161,7 +161,7 @@ def puzzle_sent_for_date(date: str) -> bool:
 def _row_to_puzzle(row: dict) -> dict:
     return {
         "puzzle_id": row["puzzle_id"],
-        "sent_on": row["sent_on"],
+        "posted_at": row["posted_at"],
         "fen": row["fen"],
         "solution": json.loads(row["solution"]),
         "slack_ts": row["slack_ts"],
@@ -191,7 +191,7 @@ def update_puzzle_slack_ts(puzzle_id: str, slack_ts: str | None) -> None:
         _puzzle_cache[puzzle_id]["slack_ts"] = slack_ts
 
 
-# Only sent puzzles are cached (GET_BY_ID excludes queued ones), and a sent
+# Only posted puzzles are cached (GET_BY_ID excludes queued ones), and a posted
 # puzzle's fen/solution never change - slack_ts, the one field a resend updates,
 # is refreshed in update_puzzle_slack_ts. So it's safe to cache for the life of
 # the process instead of round-tripping to Turso on every submission.
