@@ -180,6 +180,29 @@ def get_active_puzzle_by_date(date: str) -> dict | None:
 
 
 @_retry_stale_connection
+def close_active_puzzle(date: str) -> dict | None:
+    """Closes today's active puzzle to further submissions (sets closed_at) and
+    returns it so the caller can post its solution in-thread. Returns None if
+    there's no active puzzle for that date, or it's already closed - so a
+    retriggered cron doesn't re-post the solution."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(PuzzleQueries.GET_ACTIVE_BY_DATE, (date,))
+        row = cur.fetchone()
+        if row is None:
+            return None
+        puzzle = _row_to_puzzle(_row_to_dict(cur, row))
+
+        cur.execute(PuzzleQueries.CLOSE_IF_OPEN, (_now(), puzzle['puzzle_id']))
+        if cur.rowcount == 0:
+            logger.info("close_active_puzzle: %s already closed, no-op", puzzle['puzzle_id'])
+            return None
+
+        logger.info("close_active_puzzle: closed %s", puzzle['puzzle_id'])
+        return puzzle
+
+
+@_retry_stale_connection
 def update_puzzle_slack_ts(puzzle_id: str, slack_ts: str | None) -> None:
     """Points a puzzle at its latest Slack post (a resend re-posts to the
     channel, so solve-time scoring should measure from that post, not a
@@ -216,18 +239,18 @@ def get_puzzle(puzzle_id: str) -> dict | None:
 
 @_retry_stale_connection
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> str:
-    """Records a submission, checking in the same statement that puzzle_id is still
-    the latest active puzzle (see SubmissionQueries.INSERT_IF_LATEST) - one Turso round
-    trip covering both the staleness check and the write. Returns one of
-    SubmissionResult.RECORDED, .DUPLICATE (an active submission already exists for this
-    puzzle/user), or .STALE_PUZZLE (a newer puzzle has since been posted). score is
-    computed by the caller (see scoring.compute_score) since only it knows the puzzle's
-    post time."""
+    """Records a submission, checking in the same statement that the puzzle is still
+    active, posted, and open (see SubmissionQueries.INSERT_IF_OPEN) - one Turso round
+    trip covering both that check and the write. Returns one of SubmissionResult.RECORDED,
+    .DUPLICATE (an active submission already exists for this puzzle/user), or
+    .PUZZLE_CLOSED (the puzzle is deactivated or its solution has been revealed in-thread).
+    score is computed by the caller (see scoring.compute_score) since only it knows the
+    puzzle's post time."""
     with get_connection() as conn:
         cur = conn.cursor()
         try:
             cur.execute(
-                SubmissionQueries.INSERT_IF_LATEST,
+                SubmissionQueries.INSERT_IF_OPEN,
                 (puzzle_id, user_id, user_name, moves, int(correct), score, datetime.now(timezone.utc).isoformat(), puzzle_id),
             )
         except turso_serverless.IntegrityError:
@@ -235,8 +258,8 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
             return SubmissionResult.DUPLICATE
 
         if cur.rowcount == 0:
-            logger.info("record_submission: stale puzzle=%s user=%s (no longer latest)", puzzle_id, user_id)
-            return SubmissionResult.STALE_PUZZLE
+            logger.info("record_submission: closed puzzle=%s user=%s", puzzle_id, user_id)
+            return SubmissionResult.PUZZLE_CLOSED
 
         logger.info(
             "record_submission: recorded puzzle=%s user=%s correct=%s score=%d",

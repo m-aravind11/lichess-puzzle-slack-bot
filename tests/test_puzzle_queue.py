@@ -88,9 +88,9 @@ def test_puzzle_queued_after_todays_post_does_not_shadow_it_for_submissions(conn
     assert db.record_submission("today", "U1", "alice", "e4", True, 10) == db.SubmissionResult.RECORDED
 
 
-def test_puzzle_queued_before_an_earlier_post_is_latest_once_posted(conn):
-    # Queued first (older rowid) but posted after "random" - latest is by post
-    # time, so submissions go to the queued puzzle once it's posted.
+def test_multiple_puzzles_posted_the_same_day_are_each_independently_open(conn):
+    # No "latest puzzle" gating anymore - each active, posted, open puzzle
+    # accepts its own submissions regardless of post order or rowid.
     db.queue_puzzle("queued", "fen", ["e4"])
     db.deactivate_puzzle("queued")
     db.save_puzzle("random", "fen", ["d4"])
@@ -98,7 +98,7 @@ def test_puzzle_queued_before_an_earlier_post_is_latest_once_posted(conn):
     db.save_puzzle("queued", "fen", ["e4"])
 
     assert db.record_submission("queued", "U1", "alice", "e4", True, 10) == db.SubmissionResult.RECORDED
-    assert db.record_submission("random", "U2", "bob", "d4", True, 10) == db.SubmissionResult.STALE_PUZZLE
+    assert db.record_submission("random", "U2", "bob", "d4", True, 10) == db.SubmissionResult.RECORDED
 
 
 def test_list_puzzles_filters_by_state(conn):
@@ -123,7 +123,7 @@ def test_migrations_keep_existing_puzzles_as_posted(monkeypatch):
     migrations.run_migrations(connection)
 
     columns = [row[1] for row in connection.execute("PRAGMA table_info(puzzles)")]
-    assert columns == ["puzzle_id", "fen", "solution", "source", "added_at", "posted_at", "slack_ts", "active"]
+    assert columns == ["puzzle_id", "fen", "solution", "source", "added_at", "posted_at", "slack_ts", "active", "closed_at"]
 
     rows = connection.execute("SELECT puzzle_id, fen, solution, source, added_at, posted_at, slack_ts, active FROM puzzles").fetchall()
     posted_at = "2026-09-18T11:30:57.799+00:00"

@@ -84,16 +84,16 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
         elapsed_seconds = (datetime.now(timezone.utc) - posted_at).total_seconds()
     score = compute_score(correct, elapsed_seconds)
 
-    # No separate has_submitted()/get_latest_puzzle() pre-checks - record_submission()
-    # does both the staleness check and the duplicate check as part of the same insert,
+    # No separate has_submitted()/is_open() pre-checks - record_submission() does
+    # both the open-puzzle check and the duplicate check as part of the same insert,
     # since every extra round trip here eats into Slack's 3-second interaction budget.
     result = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 
-    if result == db.SubmissionResult.STALE_PUZZLE:
+    if result == db.SubmissionResult.PUZZLE_CLOSED:
         return {
             "response_action": "errors",
-            "errors": {SlackActions.MOVES_BLOCK_ID: "A new puzzle has been posted - this one is no longer accepting answers."},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "The solution's been posted - this puzzle is no longer accepting answers."},
         }
     if result == db.SubmissionResult.DUPLICATE:
         return {
