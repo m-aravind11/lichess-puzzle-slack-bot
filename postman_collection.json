@@ -117,6 +117,18 @@
             },
             "description": "Posts a different puzzle even if one was already sent today (takes the next queued one first)."
           }
+        },
+        {
+          "name": "Reveal solution",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzle:revealSolution",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzle:revealSolution"]
+            },
+            "description": "Posts today's solution in-thread and closes the puzzle to further submissions. No-op if today has no open puzzle. Run before Send leaderboard."
+          }
         }
       ]
     },
