@@ -80,18 +80,18 @@ class PuzzleQueries:
 
     REACTIVATE = "UPDATE puzzles SET active = 1 WHERE puzzle_id = ? AND active = 0"
 
+    # No-op (rowcount 0) if already closed, so a retriggered cron doesn't re-post.
+    CLOSE_IF_OPEN = "UPDATE puzzles SET closed_at = ? WHERE puzzle_id = ? AND closed_at IS NULL"
+
 
 class SubmissionQueries:
-    # No-op (rowcount 0) if puzzle_id isn't the latest posted active puzzle;
-    # duplicate still raises IntegrityError via the partial unique index. "Latest"
-    # is by posted_at, not rowid - a queued puzzle added after today's post has a
-    # newer rowid but hasn't been posted yet.
-    INSERT_IF_LATEST = """
+    # No-op (rowcount 0) if the puzzle isn't active, posted, and still open;
+    # duplicate still raises IntegrityError via the partial unique index.
+    INSERT_IF_OPEN = """
         INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)
         SELECT ?, ?, ?, ?, ?, ?, ?, 1
-        WHERE ? = (
-            SELECT puzzle_id FROM puzzles WHERE active = 1 AND posted_at IS NOT NULL
-            ORDER BY posted_at DESC, rowid DESC LIMIT 1
+        WHERE EXISTS (
+            SELECT 1 FROM puzzles WHERE puzzle_id = ? AND active = 1 AND posted_at IS NOT NULL AND closed_at IS NULL
         )
     """
 

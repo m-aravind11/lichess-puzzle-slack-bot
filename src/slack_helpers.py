@@ -41,6 +41,13 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: in
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 
+def format_solution_reveal(puzzle: dict) -> str:
+    return (
+        f"*Solution to the above puzzle:* `{' '.join(puzzle['solution'])}`\n"
+        "_PS: this puzzle is no longer accepting answers._"
+    )
+
+
 def format_leaderboard(board: list) -> str:
     columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time"]
     rows = [

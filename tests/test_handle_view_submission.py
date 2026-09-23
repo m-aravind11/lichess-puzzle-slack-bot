@@ -113,9 +113,9 @@ def test_duplicate_submission_returns_error_without_dm(monkeypatch):
     slack_client.chat_postMessage.assert_not_called()
 
 
-def test_stale_puzzle_returns_error_without_dm(monkeypatch):
+def test_closed_puzzle_returns_error_without_dm(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.STALE_PUZZLE))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.PUZZLE_CLOSED))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
