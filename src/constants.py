@@ -11,7 +11,9 @@ class Security:
 
 
 class Validation:
-    SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=[QRBN])?)[+#]?$', re.IGNORECASE)
+    # The trailing promotion group's '=' is optional so plain UCI-style promotions
+    # (e7e8q, alongside SAN's e8=Q) pass through to parse_san, which accepts both.
+    SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=?[QRBN])?)[+#]?$', re.IGNORECASE)
 
 
 class SlackActions:

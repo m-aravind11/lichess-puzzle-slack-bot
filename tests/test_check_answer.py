@@ -78,3 +78,38 @@ def test_garbage_token_returns_false_not_error():
 
 def test_wrong_move_count_returns_false():
     assert not lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["e4"])
+
+
+@pytest.mark.parametrize("submitted", ["e2e4", "E2E4"])
+def test_uci_style_move_accepted(submitted):
+    assert lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], [submitted, "Nf3"])
+
+
+def test_uci_style_piece_move_accepted():
+    fen = fen_after("e4", "e5")
+    assert lp.check_answer(fen, ["Nf3"], ["g1f3"])
+
+
+@pytest.mark.parametrize("submitted", ["e8=Q", "e8=q", "e7e8q", "e7e8Q", "e7e8=q"])
+def test_promotion_accepts_uci_and_mixed_case(submitted):
+    fen = "k7/4P3/8/8/8/8/8/4K3 w - - 0 1"
+    assert lp.check_answer(fen, ["e8=Q"], [submitted])
+
+
+def test_same_puzzle_accepts_both_san_and_uci_submissions():
+    solution = ["e4", "e5", "Nf3"]
+    assert lp.check_answer(START_FEN, solution, ["e4", "Nf3"])
+    assert lp.check_answer(START_FEN, solution, ["e2e4", "g1f3"])
+
+
+def test_same_puzzle_accepts_a_mix_of_san_and_uci_within_one_submission():
+    solution = ["e4", "e5", "Nf3"]
+    assert lp.check_answer(START_FEN, solution, ["e2e4", "Nf3"])
+    assert lp.check_answer(START_FEN, solution, ["e4", "g1f3"])
+
+
+def test_same_promotion_puzzle_accepts_both_san_and_uci_submissions():
+    fen = "k7/4P3/8/8/8/8/8/4K3 w - - 0 1"
+    solution = ["e8=Q"]
+    assert lp.check_answer(fen, solution, ["e8=Q"])
+    assert lp.check_answer(fen, solution, ["e7e8q"])
