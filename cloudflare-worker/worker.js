@@ -11,6 +11,7 @@
 const BASE_URL = "https://lichess-puzzle-slack-bot.vercel.app";
 
 const ROUTES = {
+  "50 10 * * *": "/admin/puzzle:revealSolution",
   "0 11 * * *": "/admin/leaderboard:send",
   "30 11 * * *": "/admin/dailyPuzzle:send",
 };
