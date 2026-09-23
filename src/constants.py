@@ -26,7 +26,7 @@ class SlackActions:
 class SubmissionResult:
     RECORDED = "recorded"
     DUPLICATE = "duplicate"
-    STALE_PUZZLE = "stale_puzzle"
+    PUZZLE_CLOSED = "puzzle_closed"
 
 
 class PuzzleSource:

@@ -137,6 +137,14 @@ def _0008_simplify_puzzle_timestamps(conn) -> None:
     cur.execute("ALTER TABLE puzzles DROP COLUMN sent_on")
 
 
+def _0009_add_closed_at_to_puzzles(conn) -> None:
+    # NULL = still accepting answers. Set when the solution is revealed in-thread
+    # (see PuzzleQueries.CLOSE_IF_OPEN), independent of whether a newer puzzle has
+    # been posted - lets the solution go up, and submissions stop, same-day.
+    if "closed_at" not in _table_columns(conn, "puzzles"):
+        conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN closed_at TEXT")
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -146,6 +154,7 @@ MIGRATIONS = [
     ("0006_add_score_to_submissions", _0006_add_score_to_submissions),
     ("0007_add_puzzle_queue_to_puzzles", _0007_add_puzzle_queue_to_puzzles),
     ("0008_simplify_puzzle_timestamps", _0008_simplify_puzzle_timestamps),
+    ("0009_add_closed_at_to_puzzles", _0009_add_closed_at_to_puzzles),
 ]
 
 

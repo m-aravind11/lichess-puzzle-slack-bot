@@ -14,6 +14,7 @@ ADMIN_ROUTES = [
     ("DELETE", "/admin/submissions/1"),
     ("DELETE", "/admin/puzzles/p1"),
     ("POST", "/admin/puzzles/p1:reactivate"),
+    ("POST", "/admin/puzzle:revealSolution"),
     ("POST", "/admin/leaderboard:send"),
     ("POST", "/admin/puzzles"),
     ("GET", "/admin/puzzles"),
@@ -46,6 +47,7 @@ def test_auth_is_checked_before_the_handler_runs(client, method, path, monkeypat
     monkeypatch.setattr(db, "deactivate_submission", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "deactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "reactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "close_active_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "list_puzzles", MagicMock(side_effect=AssertionError("should not run")))
@@ -148,6 +150,7 @@ def test_unset_cron_secret_fails_closed(method, path, monkeypatch):
     monkeypatch.setattr(db, "deactivate_submission", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "deactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "reactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
+    monkeypatch.setattr(db, "close_active_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "init_db", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))

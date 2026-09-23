@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
 import requests
@@ -15,7 +16,7 @@ import db
 from constants import Paths, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import format_leaderboard
+from slack_helpers import format_leaderboard, format_solution_reveal
 from slack_verify import verify_slack_request
 
 # One id per incoming request, auto-injected into every log line (including ones
@@ -152,6 +153,33 @@ async def slack_interactions(request: Request):
     if payload.get('type') == 'view_submission' and payload['view'].get('callback_id') == SlackActions.ANSWER_MODAL_CALLBACK_ID:
         return handle_view_submission(slack_client, lichess, payload)
 
+    return Response(status_code=200)
+
+@app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_admin_auth)])
+async def reveal_puzzle_solution():
+    # Cron runs this before /admin/leaderboard:send, so the solution lands in-thread
+    # for everyone (including people who never answered) just ahead of the leaderboard.
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    try:
+        puzzle = db.close_active_puzzle(date_str)
+        if not puzzle:
+            logger.info("admin/puzzle:revealSolution: no open puzzle for %s, nothing to post", date_str)
+            return Response(status_code=200)
+        if not puzzle['slack_ts']:
+            logger.info("admin/puzzle:revealSolution: puzzle %s has no thread to post to", puzzle['puzzle_id'])
+            return Response(status_code=200)
+
+        slack_client.chat_postMessage(
+            channel=lichess.SLACK_CHANNEL_ID,
+            thread_ts=puzzle['slack_ts'],
+            text=format_solution_reveal(puzzle),
+            # Stays a threaded reply (keeps it attached to the puzzle post) but also
+            # surfaces in the main channel feed, for people who never opened the thread.
+            reply_broadcast=True,
+        )
+    except Exception:
+        logger.exception("admin/puzzle:revealSolution failed")
+        raise
     return Response(status_code=200)
 
 @app.post('/admin/leaderboard:send', dependencies=[Depends(require_admin_auth)])
