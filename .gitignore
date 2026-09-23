@@ -211,3 +211,10 @@ __marimo__/
 
 # Vercel
 .vercel
+
+#Code Review Graph
+.claude/
+.windsurfrules
+.mcp.json
+AGENTS.md
+CLAUDE.md
