@@ -5,13 +5,16 @@ state without going through the save/close flows."""
 
 import sqlite3
 from contextlib import contextmanager
+from unittest.mock import MagicMock
 
 import pytest
+from fastapi.testclient import TestClient
 
+import app as app_module
 import db
 import migrations
-from constants import Streaks
-from slack_helpers import format_leaderboard
+from constants import Security, Streaks
+from slack_helpers import format_leaderboard, format_streak_milestones
 
 
 @pytest.fixture
@@ -242,41 +245,39 @@ def _entry(user_id, current_streak):
     }
 
 
-def test_leaderboard_shows_streak_column_and_mentions_milestones_longest_first():
-    text = format_leaderboard([_entry("U1", 3), _entry("U2", 4), _entry("U3", 7)])
+def test_leaderboard_is_only_the_header_and_table():
+    text = format_leaderboard([_entry("U1", 7)])
     assert "Current Streak" in text
-    assert text.split("```")[-1].strip().splitlines() == [
+    assert text.endswith("```")
+    assert "<@" not in text
+
+
+def test_milestones_are_listed_longest_first():
+    assert format_streak_milestones([_entry("U1", 3), _entry("U2", 4), _entry("U3", 7)]).splitlines() == [
         "*Streak milestones*",
-        "<@U3> is on a 7-day streak.",
-        "<@U1> is on a 3-day streak.",
+        "• <@U3> is on a 7-day streak.",
+        "• <@U1> is on a 3-day streak.",
     ]
 
 
 def test_players_on_the_same_milestone_share_a_line():
-    text = format_leaderboard([_entry("U1", 7), _entry("U2", 7), _entry("U3", 7)])
-    assert text.endswith("<@U1>, <@U2> and <@U3> are on a 7-day streak.")
+    text = format_streak_milestones([_entry("U1", 7), _entry("U2", 7), _entry("U3", 7)])
+    assert text.endswith("• <@U1>, <@U2> and <@U3> are on a 7-day streak.")
 
 
 def test_two_players_on_a_milestone_are_joined_with_and():
-    text = format_leaderboard([_entry("U1", 30), _entry("U2", 30)])
-    assert text.endswith("<@U1> and <@U2> are on a 30-day streak.")
+    text = format_streak_milestones([_entry("U1", 30), _entry("U2", 30)])
+    assert text.endswith("• <@U1> and <@U2> are on a 30-day streak.")
 
 
 @pytest.mark.parametrize("streak", Streaks.MILESTONES)
 def test_every_milestone_is_announced(streak):
-    assert format_leaderboard([_entry("U1", streak)]).endswith(f"<@U1> is on a {streak}-day streak.")
+    assert format_streak_milestones([_entry("U1", streak)]).endswith(f"• <@U1> is on a {streak}-day streak.")
 
 
 @pytest.mark.parametrize("streak", [0, 1, 2, 4, 5, 10, 25, 364, 366, 730])
 def test_non_milestones_are_not_announced(streak):
-    assert format_leaderboard([_entry("U1", streak)]).endswith("```")
-
-
-def test_mentions_use_user_id_while_table_uses_name():
-    text = format_leaderboard([_entry("U1", 3)])
-    table, milestones = text.split("```")[1], text.split("```")[-1]
-    assert "u1" in table and "<@" not in table
-    assert "<@U1>" in milestones
+    assert format_streak_milestones([_entry("U1", streak)]) is None
 
 
 def test_table_falls_back_to_user_id_when_name_missing():
@@ -285,6 +286,37 @@ def test_table_falls_back_to_user_id_when_name_missing():
     assert "U1" in format_leaderboard([entry]).split("```")[1]
 
 
-def test_leaderboard_without_milestones_ends_at_the_table():
-    text = format_leaderboard([_entry("U1", 2)])
-    assert text.endswith("```")
+def test_solved_column_shows_correct_over_attempted():
+    entry = _entry("U1", 0)
+    entry.update(correct=9, attempted=12)
+    header, _, row = format_leaderboard([entry]).split("```")[1].strip().splitlines()
+    assert header.split() == ["#", "Name", "Points", "Solved", "Avg", "Solve", "Time", "Current", "Streak"]
+    assert row.split()[3] == "9/12"
+
+
+@pytest.fixture
+def post_leaderboard(monkeypatch):
+    """Calls /admin/leaderboard:send with the given board, returns the posted text."""
+    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    post = MagicMock()
+    monkeypatch.setattr(app_module.slack_client, "chat_postMessage", post)
+
+    def run(board):
+        monkeypatch.setattr(db, "get_leaderboard", lambda: board)
+        response = TestClient(app_module.app).post(
+            "/admin/leaderboard:send", headers={"Authorization": "Bearer s3cr3t"},
+        )
+        assert response.status_code == 200
+        return post.call_args.kwargs["text"]
+
+    return run
+
+
+def test_posted_leaderboard_separates_milestones_with_a_blank_line(post_leaderboard):
+    board = [_entry("U1", 7)]
+    assert post_leaderboard(board) == f"{format_leaderboard(board)}\n\n{format_streak_milestones(board)}"
+
+
+def test_posted_leaderboard_without_milestones_is_just_the_table(post_leaderboard):
+    board = [_entry("U1", 2)]
+    assert post_leaderboard(board) == format_leaderboard(board)

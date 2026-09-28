@@ -51,15 +51,13 @@ def format_solution_reveal(puzzle: dict) -> str:
 
 
 def format_leaderboard(board: list) -> str:
-    columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time", "Current Streak"]
+    columns = ["#", "Name", "Points", "Solved", "Avg Solve Time", "Current Streak"]
     rows = [
         [
             str(i + 1),
             row["user_name"] or row["user_id"],
             str(row["score"]),
-            str(row["correct"]),
-            str(row["incorrect"]),
-            str(row["attempted"]),
+            f"{row['correct']}/{row['attempted']}",
             format_seconds(row["avg_solve_seconds"]),
             str(row["current_streak"]),
         ]
@@ -75,27 +73,29 @@ def format_leaderboard(board: list) -> str:
 
     header = "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
     table = "```\n" + "\n".join(table_lines) + "\n```"
-    return "\n".join([header, table, *format_streak_milestones(board)])
+    return f"{header}\n{table}"
 
 
 def _join_names(names: list) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def format_streak_milestones(board: list) -> list:
-    """One line per milestone reached, longest first, @-mentioning everyone on it
-    - outside the table's code block, where Slack would render <@U...> literally."""
+def format_streak_milestones(board: list) -> str | None:
+    """One bullet per milestone reached, longest first, @-mentioning everyone on it.
+    Kept separate from format_leaderboard's code block, where Slack would render
+    <@U...> literally. None when nobody hit a milestone."""
     by_milestone = {}
     for row in board:
         if row["current_streak"] in Streaks.MILESTONES:
             by_milestone.setdefault(row["current_streak"], []).append(f"<@{row['user_id']}>")
 
     if not by_milestone:
-        return []
+        return None
 
     lines = ["*Streak milestones*"]
     for days in sorted(by_milestone, reverse=True):
         mentions = by_milestone[days]
         verb = "is" if len(mentions) == 1 else "are"
-        lines.append(f"{_join_names(mentions)} {verb} on a {days}-day streak.")
-    return lines
+        # Slack mrkdwn has no list syntax, so bullets are a literal character.
+        lines.append(f"• {_join_names(mentions)} {verb} on a {days}-day streak.")
+    return "\n".join(lines)
