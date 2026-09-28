@@ -49,6 +49,12 @@ for a measurement that isn't there. See `src/scoring.py`.
 The leaderboard ranks by total points, ties broken by fastest average solve
 time (correct answers only).
 
+It also shows each player's current streak: consecutive puzzles answered
+correctly. A wrong or missing answer breaks it; a day with no puzzle posted, or
+a deactivated puzzle, doesn't. While the latest puzzle is still open, players
+who haven't answered it yet keep their streak. Hitting 3, 5, 10, 25, 50 or 100
+gets an @-mention shout-out under the table (`Streaks.MILESTONES` in `src/constants.py`).
+
 ## Answer modal
 
 The modal only asks for the player's own moves, one per ply of theirs, in
