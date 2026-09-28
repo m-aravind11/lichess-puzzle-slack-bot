@@ -4,6 +4,8 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+from constants import Streaks
+
 logger = logging.getLogger(__name__)
 
 
@@ -49,7 +51,7 @@ def format_solution_reveal(puzzle: dict) -> str:
 
 
 def format_leaderboard(board: list) -> str:
-    columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time"]
+    columns = ["#", "Name", "Points", "Correct", "Incorrect", "Attempted", "Avg Time", "Current Streak"]
     rows = [
         [
             str(i + 1),
@@ -59,6 +61,7 @@ def format_leaderboard(board: list) -> str:
             str(row["incorrect"]),
             str(row["attempted"]),
             format_seconds(row["avg_solve_seconds"]),
+            str(row["current_streak"]),
         ]
         for i, row in enumerate(board)
     ]
@@ -72,4 +75,27 @@ def format_leaderboard(board: list) -> str:
 
     header = "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
     table = "```\n" + "\n".join(table_lines) + "\n```"
-    return f"{header}\n{table}"
+    return "\n".join([header, table, *format_streak_milestones(board)])
+
+
+def _join_names(names: list) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def format_streak_milestones(board: list) -> list:
+    """One line per milestone reached, longest first, @-mentioning everyone on it
+    - outside the table's code block, where Slack would render <@U...> literally."""
+    by_milestone = {}
+    for row in board:
+        if row["current_streak"] in Streaks.MILESTONES:
+            by_milestone.setdefault(row["current_streak"], []).append(f"<@{row['user_id']}>")
+
+    if not by_milestone:
+        return []
+
+    lines = ["*Streak milestones*"]
+    for days in sorted(by_milestone, reverse=True):
+        mentions = by_milestone[days]
+        verb = "is" if len(mentions) == 1 else "are"
+        lines.append(f"{_join_names(mentions)} {verb} on a {days}-day streak.")
+    return lines

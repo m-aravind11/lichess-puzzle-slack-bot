@@ -25,6 +25,12 @@ class SlackActions:
     MOVES_ACTION_ID = "moves_input"
 
 
+class Streaks:
+    # Current-streak lengths announced under the leaderboard. It posts once a day,
+    # so matching exactly (not >=) announces each milestone once, the day it's hit.
+    MILESTONES = (3, 7, 14, 30, 50, 100, 150, 200, 250, 300, 365)
+
+
 class SubmissionResult:
     RECORDED = "recorded"
     DUPLICATE = "duplicate"

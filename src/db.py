@@ -328,10 +328,12 @@ def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
 
 
 @_retry_stale_connection
-def get_leaderboard(limit: int = 10) -> list:
-    """Ranks by total points (see scoring.compute_score - faster correct answers
-    score higher), breaking ties by fastest average solve time (time from puzzle
-    post to submission, over correct answers only)."""
+def get_leaderboard() -> list:
+    """Ranks everyone with an active submission by total points (see
+    scoring.compute_score - faster correct answers score higher), breaking ties
+    by fastest average solve time (time from puzzle post to submission, over
+    correct answers only). Each entry also carries current_streak and
+    best_streak (see LeaderboardQueries.STREAKS)."""
     with get_connection() as conn:
         cur = conn.cursor()
 
@@ -348,12 +350,17 @@ def get_leaderboard(limit: int = 10) -> list:
             if seconds >= 0:
                 solve_times[row["user_id"]].append(seconds)
 
+        cur.execute(LeaderboardQueries.STREAKS)
+        streaks = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
+
     for user_id, entry in board.items():
         times = solve_times.get(user_id)
         entry["avg_solve_seconds"] = sum(times) / len(times) if times else None
+        streak = streaks.get(user_id)
+        entry["current_streak"] = streak["current_streak"] if streak else 0
+        entry["best_streak"] = streak["best_streak"] if streak else 0
 
-    ranked = sorted(
+    return sorted(
         board.values(),
         key=lambda r: (-r["score"], -r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
     )
-    return ranked[:limit]

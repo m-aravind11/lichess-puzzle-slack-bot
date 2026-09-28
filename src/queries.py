@@ -124,3 +124,35 @@ class LeaderboardQueries:
         JOIN puzzles p ON p.puzzle_id = s.puzzle_id
         WHERE s.active = 1 AND s.correct = 1 AND p.slack_ts IS NOT NULL
     """
+
+    # A streak is consecutive correct answers over posted, active puzzles - not
+    # calendar days - so a day nothing was posted, or a deactivated puzzle, leaves
+    # no gap. seq numbers those puzzles in post order; within a user's wins,
+    # n - ROW_NUMBER() is constant across an unbroken run (gaps-and-islands), so
+    # grouping by it yields each run. A run is current if it reaches the latest
+    # puzzle - or the one before, while the latest is still open and the user may
+    # not have answered it yet. Users with no correct answers get no row.
+    STREAKS = """
+        WITH seq AS (
+            SELECT puzzle_id, closed_at,
+                   ROW_NUMBER() OVER (ORDER BY posted_at, rowid) AS n
+            FROM puzzles WHERE posted_at IS NOT NULL AND active = 1
+        ),
+        wins AS (
+            SELECT s.user_id, seq.n,
+                   seq.n - ROW_NUMBER() OVER (PARTITION BY s.user_id ORDER BY seq.n) AS run
+            FROM submissions s JOIN seq ON seq.puzzle_id = s.puzzle_id
+            WHERE s.active = 1 AND s.correct = 1
+        ),
+        runs AS (
+            SELECT user_id, COUNT(*) AS len, MAX(n) AS last_n FROM wins GROUP BY user_id, run
+        ),
+        latest AS (
+            SELECT n, closed_at IS NULL AS is_open FROM seq ORDER BY n DESC LIMIT 1
+        )
+        SELECT r.user_id,
+               MAX(r.len) AS best_streak,
+               COALESCE(MAX(CASE WHEN r.last_n >= l.n - l.is_open THEN r.len END), 0) AS current_streak
+        FROM runs r CROSS JOIN latest l
+        GROUP BY r.user_id
+    """
