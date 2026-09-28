@@ -25,6 +25,16 @@ class PuzzleQueries:
         ORDER BY posted_at DESC, rowid DESC LIMIT 1
     """
 
+    # The puzzle whose solution the reveal cron posts: it runs the day after the
+    # puzzle went out, ahead of that day's new puzzle, so it looks strictly before
+    # today. Ignores active and closed_at - the caller checks those - so a
+    # retriggered reveal finds the same (already closed) puzzle and no-ops,
+    # instead of falling through to an older, never-closed one and revealing it.
+    GET_LATEST_POSTED_BEFORE_DATE = """
+        SELECT * FROM puzzles WHERE posted_at IS NOT NULL AND substr(posted_at, 1, 10) < ?
+        ORDER BY posted_at DESC, rowid DESC LIMIT 1
+    """
+
     INSERT_QUEUED = """
         INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, active)
         VALUES (?, ?, ?, ?, ?, 1)

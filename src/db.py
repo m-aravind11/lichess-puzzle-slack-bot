@@ -180,25 +180,30 @@ def get_active_puzzle_by_date(date: str) -> dict | None:
 
 
 @_retry_stale_connection
-def close_active_puzzle(date: str) -> dict | None:
-    """Closes today's active puzzle to further submissions (sets closed_at) and
-    returns it so the caller can post its solution in-thread. Returns None if
-    there's no active puzzle for that date, or it's already closed - so a
-    retriggered cron doesn't re-post the solution."""
+def close_previous_puzzle(before_date: str) -> dict | None:
+    """Closes the most recent puzzle posted before before_date (YYYY-MM-DD, UTC)
+    to further submissions (sets closed_at) and returns it so the caller can post
+    its solution in-thread. Returns None if there's no such puzzle, it's been
+    deactivated, or it's already closed - so a retriggered cron doesn't re-post
+    the solution."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(PuzzleQueries.GET_ACTIVE_BY_DATE, (date,))
+        cur.execute(PuzzleQueries.GET_LATEST_POSTED_BEFORE_DATE, (before_date,))
         row = cur.fetchone()
         if row is None:
             return None
-        puzzle = _row_to_puzzle(_row_to_dict(cur, row))
+        row = _row_to_dict(cur, row)
+        if not row["active"]:
+            logger.info("close_previous_puzzle: %s is deactivated, no-op", row["puzzle_id"])
+            return None
+        puzzle = _row_to_puzzle(row)
 
         cur.execute(PuzzleQueries.CLOSE_IF_OPEN, (_now(), puzzle['puzzle_id']))
         if cur.rowcount == 0:
-            logger.info("close_active_puzzle: %s already closed, no-op", puzzle['puzzle_id'])
+            logger.info("close_previous_puzzle: %s already closed, no-op", puzzle['puzzle_id'])
             return None
 
-        logger.info("close_active_puzzle: closed %s", puzzle['puzzle_id'])
+        logger.info("close_previous_puzzle: closed %s", puzzle['puzzle_id'])
         return puzzle
 
 

@@ -59,20 +59,20 @@ def test_closing_the_puzzle_rejects_further_submissions(conn, monkeypatch):
     monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
     db.save_puzzle("p1", "fen", ["e4"])
 
-    closed = db.close_active_puzzle("2024-01-01")
+    closed = db.close_previous_puzzle("2024-01-02")
     assert closed["puzzle_id"] == "p1"
     assert db.record_submission("p1", "U1", "alice", "e4", True, 10) == db.SubmissionResult.PUZZLE_CLOSED
 
 
-def test_closing_a_date_with_no_active_puzzle_is_a_no_op(conn):
-    assert db.close_active_puzzle("2024-01-01") is None
+def test_closing_with_no_earlier_puzzle_is_a_no_op(conn):
+    assert db.close_previous_puzzle("2024-01-01") is None
 
 
-def test_closing_for_the_wrong_date_leaves_the_puzzle_open(conn, monkeypatch):
+def test_closing_does_not_touch_a_puzzle_posted_today(conn, monkeypatch):
     monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
     db.save_puzzle("p1", "fen", ["e4"])
 
-    assert db.close_active_puzzle("2024-01-02") is None
+    assert db.close_previous_puzzle("2024-01-01") is None
     assert db.record_submission("p1", "U1", "alice", "e4", True, 10) == db.SubmissionResult.RECORDED
 
 
@@ -80,8 +80,26 @@ def test_reclosing_an_already_closed_puzzle_is_a_no_op(conn, monkeypatch):
     monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
     db.save_puzzle("p1", "fen", ["e4"])
 
-    assert db.close_active_puzzle("2024-01-01")["puzzle_id"] == "p1"
-    assert db.close_active_puzzle("2024-01-01") is None
+    assert db.close_previous_puzzle("2024-01-02")["puzzle_id"] == "p1"
+    assert db.close_previous_puzzle("2024-01-02") is None
+
+
+def test_reclosing_does_not_fall_through_to_an_older_open_puzzle(conn, monkeypatch):
+    monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
+    db.save_puzzle("p1", "fen", ["e4"])
+    monkeypatch.setattr(db, "_now", lambda: "2024-01-02T20:00:00+00:00")
+    db.save_puzzle("p2", "fen", ["d4"])
+
+    assert db.close_previous_puzzle("2024-01-03")["puzzle_id"] == "p2"
+    assert db.close_previous_puzzle("2024-01-03") is None
+
+
+def test_closing_skips_a_deactivated_previous_puzzle(conn, monkeypatch):
+    monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
+    db.save_puzzle("p1", "fen", ["e4"])
+    assert db.deactivate_puzzle("p1") == db.PuzzleResult.DEACTIVATED
+
+    assert db.close_previous_puzzle("2024-01-02") is None
 
 
 def test_a_deactivated_puzzle_rejects_submissions_even_if_never_closed(conn):
@@ -90,13 +108,13 @@ def test_a_deactivated_puzzle_rejects_submissions_even_if_never_closed(conn):
     assert db.record_submission("p1", "U1", "alice", "e4", True, 10) == db.SubmissionResult.PUZZLE_CLOSED
 
 
-def test_closing_one_days_puzzle_does_not_affect_another_days(conn, monkeypatch):
+def test_closing_yesterdays_puzzle_does_not_affect_todays(conn, monkeypatch):
     monkeypatch.setattr(db, "_now", lambda: "2024-01-01T20:00:00+00:00")
     db.save_puzzle("p1", "fen", ["e4"])
     monkeypatch.setattr(db, "_now", lambda: "2024-01-02T20:00:00+00:00")
     db.save_puzzle("p2", "fen", ["d4"])
 
-    db.close_active_puzzle("2024-01-01")
+    db.close_previous_puzzle("2024-01-02")
 
     assert db.record_submission("p1", "U1", "alice", "e4", True, 10) == db.SubmissionResult.PUZZLE_CLOSED
     assert db.record_submission("p2", "U2", "bob", "d4", True, 10) == db.SubmissionResult.RECORDED
