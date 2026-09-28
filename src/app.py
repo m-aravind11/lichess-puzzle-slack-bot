@@ -16,7 +16,7 @@ import db
 from constants import Paths, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import format_leaderboard, format_solution_reveal
+from slack_helpers import format_leaderboard, format_solution_reveal, format_streak_milestones
 from slack_verify import verify_slack_request
 
 # One id per incoming request, auto-injected into every log line (including ones
@@ -191,9 +191,12 @@ async def send_leaderboard():
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
+        # Blank line between the table and the milestone mentions, so they read
+        # as a separate paragraph rather than trailing off the code block.
+        sections = [format_leaderboard(board), format_streak_milestones(board)]
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
-            text=format_leaderboard(board),
+            text="\n\n".join(section for section in sections if section),
         )
     except Exception:
         logger.exception("admin/leaderboard:send failed")
