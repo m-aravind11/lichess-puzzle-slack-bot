@@ -157,13 +157,14 @@ async def slack_interactions(request: Request):
 
 @app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_admin_auth)])
 async def reveal_puzzle_solution():
-    # Cron runs this before /admin/leaderboard:send, so the solution lands in-thread
-    # for everyone (including people who never answered) just ahead of the leaderboard.
+    # Cron runs this the day after a puzzle is posted, before /admin/leaderboard:send
+    # and the next /admin/dailyPuzzle:send, so the solution lands in-thread for
+    # everyone (including people who never answered) just ahead of the leaderboard.
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
-        puzzle = db.close_active_puzzle(date_str)
+        puzzle = db.close_previous_puzzle(date_str)
         if not puzzle:
-            logger.info("admin/puzzle:revealSolution: no open puzzle for %s, nothing to post", date_str)
+            logger.info("admin/puzzle:revealSolution: no open puzzle posted before %s, nothing to post", date_str)
             return Response(status_code=200)
         if not puzzle['slack_ts']:
             logger.info("admin/puzzle:revealSolution: puzzle %s has no thread to post to", puzzle['puzzle_id'])

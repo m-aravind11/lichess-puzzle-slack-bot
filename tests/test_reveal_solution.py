@@ -28,21 +28,21 @@ def _puzzle(**overrides) -> dict:
 
 
 def test_no_open_puzzle_posts_nothing(client, monkeypatch):
-    monkeypatch.setattr(db, "close_active_puzzle", MagicMock(return_value=None))
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value=None))
     response = client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
     assert response.status_code == 200
     app_module.slack_client.chat_postMessage.assert_not_called()
 
 
 def test_closed_puzzle_with_no_thread_posts_nothing(client, monkeypatch):
-    monkeypatch.setattr(db, "close_active_puzzle", MagicMock(return_value=_puzzle(slack_ts=None)))
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value=_puzzle(slack_ts=None)))
     response = client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
     assert response.status_code == 200
     app_module.slack_client.chat_postMessage.assert_not_called()
 
 
 def test_open_puzzle_is_closed_and_its_solution_posted_in_thread(client, monkeypatch):
-    monkeypatch.setattr(db, "close_active_puzzle", MagicMock(return_value=_puzzle()))
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value=_puzzle()))
 
     response = client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
 
@@ -54,9 +54,9 @@ def test_open_puzzle_is_closed_and_its_solution_posted_in_thread(client, monkeyp
     assert "e4 e5 Qh5" in call.kwargs["text"]
 
 
-def test_close_active_puzzle_is_called_with_todays_utc_date(client, monkeypatch):
+def test_close_previous_puzzle_is_called_with_todays_utc_date(client, monkeypatch):
     close = MagicMock(return_value=None)
-    monkeypatch.setattr(db, "close_active_puzzle", close)
+    monkeypatch.setattr(db, "close_previous_puzzle", close)
 
     client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
 
