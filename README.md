@@ -55,6 +55,22 @@ a deactivated puzzle, doesn't. While the latest puzzle is still open, players
 who haven't answered it yet keep their streak. Hitting 3, 5, 10, 25, 50 or 100
 gets an @-mention shout-out under the table (`Streaks.MILESTONES` in `src/constants.py`).
 
+## Houses
+
+Players can be grouped into houses for a house leaderboard. Manage them at
+`/houses` (a static page that asks for `CRON_SECRET`, then calls the
+`/admin/houses` and `/admin/players` routes). Players are whoever has
+submitted an answer; the mapping lives in `player_houses`, where no active
+row means "not assigned" (rows are soft-deleted via `active`, like puzzles and
+submissions). Houses can only be created - not renamed or deleted. A
+player's house is fixed once assigned; when they leave the company, their
+mapping is soft-deleted (unassigned).
+
+House standings go under the player table in the leaderboard post: each
+house's points are the sum of its players' points, ties broken by more correct
+answers. Players never assigned a house aren't counted; a player who left the
+company still counts toward their house.
+
 ## Answer modal
 
 The modal only asks for the player's own moves, one per ply of theirs, in

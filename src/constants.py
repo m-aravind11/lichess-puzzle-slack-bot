@@ -4,6 +4,7 @@ import re
 
 class Paths:
     INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
+    HOUSES_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'houses.html')
 
 
 class Security:
@@ -53,3 +54,11 @@ class PuzzleResult:
     NOT_FOUND = "not_found"
     ALREADY_ACTIVE = "already_active"
     HAS_ACTIVE_SUBMISSIONS = "has_active_submissions"
+
+
+class PlayerHouseResult:
+    ASSIGNED = "assigned"
+    PLAYER_NOT_FOUND = "player_not_found"
+    HOUSE_NOT_FOUND = "house_not_found"
+    # Already in a different house - houses are fixed once assigned.
+    ALREADY_ASSIGNED = "already_assigned"

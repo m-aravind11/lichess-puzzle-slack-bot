@@ -33,21 +33,45 @@ def format_seconds(seconds: float | None) -> str:
     return " ".join(parts)
 
 
+def format_solution(solution: list) -> str:
+    """The answer as it should be typed, then the line move by move, labelled
+    You/Opponent - most players are new to chess notation, so nothing is left
+    for them to decode."""
+    answer = " ".join(solution[0::2])
+    if len(solution) == 1:
+        return f"Correct answer: `{answer}`"
+    steps = "\n".join(f"{'You' if i % 2 == 0 else 'Opponent'}: `{move}`" for i, move in enumerate(solution))
+    return f"Correct answer: `{answer}`\nHow it plays out:\n{steps}"
+
+
 def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
     result_text = (
         f"Correct - nice work! +{score} points" if correct
-        else f"Not quite. Full solution (your moves + opponent's replies): `{' '.join(puzzle['solution'])}`"
+        else f"Not quite.\n{format_solution(puzzle['solution'])}"
     )
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 
 def format_solution_reveal(puzzle: dict) -> str:
     return (
-        f"*Solution to the above puzzle:* `{' '.join(puzzle['solution'])}`\n"
+        f"*Solution to the above puzzle*\n{format_solution(puzzle['solution'])}\n"
         "_PS: this puzzle is no longer accepting answers._"
     )
+
+
+def _format_table(columns: list, rows: list) -> str:
+    """A code block with each column padded to its widest cell, so it lines up
+    in Slack's monospace rendering."""
+    widths = [max(len(col), *(len(r[i]) for r in rows)) for i, col in enumerate(columns)]
+
+    def format_row(cells: list) -> str:
+        return "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(cells))
+
+    table_lines = [format_row(columns), "  ".join("-" * w for w in widths)]
+    table_lines += [format_row(r) for r in rows]
+    return "```\n" + "\n".join(table_lines) + "\n```"
 
 
 def format_leaderboard(board: list) -> str:
@@ -63,17 +87,34 @@ def format_leaderboard(board: list) -> str:
         ]
         for i, row in enumerate(board)
     ]
-    widths = [max(len(col), *(len(r[i]) for r in rows)) for i, col in enumerate(columns)]
-
-    def format_row(cells: list) -> str:
-        return "  ".join(cell.ljust(widths[i]) for i, cell in enumerate(cells))
-
-    table_lines = [format_row(columns), "  ".join("-" * w for w in widths)]
-    table_lines += [format_row(r) for r in rows]
-
     header = "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
-    table = "```\n" + "\n".join(table_lines) + "\n```"
-    return f"{header}\n{table}"
+    return f"{header}\n{_format_table(columns, rows)}"
+
+
+def format_house_leaderboard(board: list) -> str | None:
+    """Each house's total points - the sum of its players' - ranked, ties broken
+    by more correct answers. Players never assigned a house aren't counted;
+    ones who left the company still are. None when nobody on the board has a
+    house."""
+    houses = {}
+    for row in board:
+        if row["house_name"] is None:
+            continue
+        house = houses.setdefault(row["house_name"], {"score": 0, "correct": 0, "players": 0})
+        house["score"] += row["score"]
+        house["correct"] += row["correct"]
+        house["players"] += 1
+
+    if not houses:
+        return None
+
+    ranked = sorted(houses.items(), key=lambda item: (-item[1]["score"], -item[1]["correct"], item[0]))
+    columns = ["#", "House", "Points", "Solved", "Players"]
+    rows = [
+        [str(i + 1), name, str(house["score"]), str(house["correct"]), str(house["players"])]
+        for i, (name, house) in enumerate(ranked)
+    ]
+    return f"*House standings* _(sum of each house's players' points)_\n{_format_table(columns, rows)}"
 
 
 def _join_names(names: list) -> str:

@@ -14,7 +14,9 @@
     { "key": "baseUrl", "value": "https://lichess-puzzle-slack-bot.vercel.app", "type": "string" },
     { "key": "cronSecret", "value": "", "type": "secret" },
     { "key": "puzzleId", "value": "abc123", "type": "string" },
-    { "key": "submissionId", "value": "1", "type": "string" }
+    { "key": "submissionId", "value": "1", "type": "string" },
+    { "key": "houseId", "value": "1", "type": "string" },
+    { "key": "userId", "value": "U0123ABC", "type": "string" }
   ],
   "item": [
     {
@@ -178,6 +180,81 @@
               "path": ["admin", "migrations:run"]
             },
             "description": "Applies pending schema migrations. Take a DB backup first when a migration rebuilds a table (0007 does)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Houses",
+      "item": [
+        {
+          "name": "List houses",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/houses",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "houses"]
+            }
+          }
+        },
+        {
+          "name": "Create house",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gryffindor\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/houses",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "houses"]
+            },
+            "description": "201 created, 400 blank name, 409 name taken (case-insensitive)."
+          }
+        },
+        {
+          "name": "List players",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/players",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "players"]
+            }
+          }
+        },
+        {
+          "name": "Assign player house",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"houseId\": {{houseId}}\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/players/{{userId}}/house",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "players", "{{userId}}", "house"]
+            },
+            "description": "200 assigned (or already in this house), 400 bad houseId, 404 unknown player/house, 409 already in another house (houses are fixed once assigned)."
+          }
+        },
+        {
+          "name": "Unassign player house",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/players/{{userId}}/house",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "players", "{{userId}}", "house"]
+            },
+            "description": "For when a player leaves the company - soft-deletes the assignment. 200 unassigned, 404 player isn't in a house."
           }
         }
       ]

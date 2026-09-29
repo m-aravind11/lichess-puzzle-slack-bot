@@ -18,7 +18,14 @@ ADMIN_ROUTES = [
     ("POST", "/admin/leaderboard:send"),
     ("POST", "/admin/puzzles"),
     ("GET", "/admin/puzzles"),
+    ("GET", "/admin/houses"),
+    ("POST", "/admin/houses"),
+    ("GET", "/admin/players"),
+    ("PUT", "/admin/players/U1/house"),
+    ("DELETE", "/admin/players/U1/house"),
 ]
+
+HOUSE_DB_CALLS = ["list_houses", "create_house", "list_players", "assign_player_house", "unassign_player_house"]
 
 
 @pytest.fixture
@@ -51,6 +58,8 @@ def test_auth_is_checked_before_the_handler_runs(client, method, path, monkeypat
     monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "list_puzzles", MagicMock(side_effect=AssertionError("should not run")))
+    for name in HOUSE_DB_CALLS:
+        monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(app_module.lichess, "get_puzzle_by_id", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(
         app_module.lichess, "handle_puzzle_generation_and_sending",
@@ -155,6 +164,8 @@ def test_unset_cron_secret_fails_closed(method, path, monkeypatch):
     monkeypatch.setattr(db, "init_db", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(db, "list_puzzles", MagicMock(side_effect=AssertionError("should not run")))
+    for name in HOUSE_DB_CALLS:
+        monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(app_module.lichess, "get_puzzle_by_id", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(
         app_module.lichess, "handle_puzzle_generation_and_sending",

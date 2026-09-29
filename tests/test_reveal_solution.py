@@ -51,7 +51,8 @@ def test_open_puzzle_is_closed_and_its_solution_posted_in_thread(client, monkeyp
     call = app_module.slack_client.chat_postMessage.call_args
     assert call.kwargs["thread_ts"] == "1700000000.0"
     assert call.kwargs["reply_broadcast"] is True
-    assert "e4 e5 Qh5" in call.kwargs["text"]
+    assert "Correct answer: `e4 Qh5`" in call.kwargs["text"]
+    assert "Opponent: `e5`" in call.kwargs["text"]
 
 
 def test_close_previous_puzzle_is_called_with_todays_utc_date(client, monkeypatch):

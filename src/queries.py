@@ -156,3 +156,54 @@ class LeaderboardQueries:
         FROM runs r CROSS JOIN latest l
         GROUP BY r.user_id
     """
+
+    # Each player's house - get_leaderboard tags each entry with it. Includes
+    # soft-deleted mappings: a player who left the company still counts toward
+    # their house's score. Houses never change, but a player who rejoined has
+    # more than one row, so take their latest.
+    HOUSE_MEMBERS = """
+        SELECT ph.user_id, h.name AS house_name
+        FROM player_houses ph JOIN houses h ON h.id = ph.house_id
+        WHERE ph.id = (SELECT MAX(id) FROM player_houses WHERE user_id = ph.user_id)
+    """
+
+
+class HouseQueries:
+    LIST = """
+        SELECT h.id, h.name, COUNT(ph.user_id) AS member_count
+        FROM houses h LEFT JOIN player_houses ph ON ph.house_id = h.id AND ph.active = 1
+        GROUP BY h.id
+        ORDER BY h.name
+    """
+
+    EXISTS = "SELECT 1 FROM houses WHERE id = ?"
+
+    # No row back if the name is taken (names are unique, case-insensitively).
+    INSERT = "INSERT INTO houses (name) VALUES (?) ON CONFLICT(name) DO NOTHING RETURNING id"
+
+
+class PlayerQueries:
+    # Players are whoever has an active submission; unassigned ones first, since
+    # those are the ones that need attention.
+    LIST = """
+        SELECT s.user_id, MAX(s.user_name) AS user_name, MAX(ph.house_id) AS house_id
+        FROM submissions s
+        LEFT JOIN player_houses ph ON ph.user_id = s.user_id AND ph.active = 1
+        WHERE s.active = 1
+        GROUP BY s.user_id
+        ORDER BY MAX(ph.house_id) IS NOT NULL, MAX(s.user_name) COLLATE NOCASE
+    """
+
+    EXISTS = "SELECT 1 FROM submissions WHERE user_id = ? AND active = 1 LIMIT 1"
+
+    GET_HOUSE = "SELECT house_id FROM player_houses WHERE user_id = ? AND active = 1"
+
+    # No-op (rowcount 0) if the player already has an active assignment. The
+    # conflict target names the partial unique index's WHERE, so inactive
+    # (soft-deleted) rows don't block a new one.
+    ASSIGN = """
+        INSERT INTO player_houses (user_id, house_id, assigned_at, active) VALUES (?, ?, ?, 1)
+        ON CONFLICT(user_id) WHERE active = 1 DO NOTHING
+    """
+
+    UNASSIGN = "UPDATE player_houses SET active = 0 WHERE user_id = ? AND active = 1"

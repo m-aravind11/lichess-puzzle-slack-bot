@@ -8,15 +8,15 @@ from urllib.parse import parse_qs
 
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slack_sdk import WebClient
 
 import db
-from constants import Paths, PuzzleState, Security, SlackActions
+from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import format_leaderboard, format_solution_reveal, format_streak_milestones
+from slack_helpers import format_house_leaderboard, format_leaderboard, format_solution_reveal, format_streak_milestones
 from slack_verify import verify_slack_request
 
 # One id per incoming request, auto-injected into every log line (including ones
@@ -62,6 +62,12 @@ def require_admin_auth(request: Request) -> None:
 @app.get('/')
 async def root():
     return FileResponse(Paths.INDEX_HTML_PATH)
+
+# The page itself is public - it holds no data, and every call it makes goes
+# through the admin routes below, with the secret the user types in.
+@app.get('/houses')
+async def houses_page():
+    return FileResponse(Paths.HOUSES_HTML_PATH)
 
 @app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_admin_auth)])
 async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
@@ -191,9 +197,9 @@ async def send_leaderboard():
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
-        # Blank line between the table and the milestone mentions, so they read
-        # as a separate paragraph rather than trailing off the code block.
-        sections = [format_leaderboard(board), format_streak_milestones(board)]
+        # Blank line between sections, so the milestone mentions read as a separate
+        # paragraph rather than trailing off a code block.
+        sections = [format_leaderboard(board), format_streak_milestones(board), format_house_leaderboard(board)]
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
             text="\n\n".join(section for section in sections if section),
@@ -201,4 +207,54 @@ async def send_leaderboard():
     except Exception:
         logger.exception("admin/leaderboard:send failed")
         raise
+    return Response(status_code=200)
+
+@app.get('/admin/houses', dependencies=[Depends(require_admin_auth)])
+async def list_houses():
+    return [
+        {"id": row["id"], "name": row["name"], "memberCount": row["member_count"]}
+        for row in db.list_houses()
+    ]
+
+@app.post('/admin/houses', dependencies=[Depends(require_admin_auth)])
+async def create_house(request: Request):
+    name = str((await request.json()).get('name') or '').strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    house_id = db.create_house(name)
+    if house_id is None:
+        raise HTTPException(status_code=409, detail="A house with that name already exists")
+    return JSONResponse(status_code=201, content={"id": house_id, "name": name})
+
+@app.get('/admin/players', dependencies=[Depends(require_admin_auth)])
+async def list_players():
+    return [
+        {
+            "userId": row["user_id"],
+            "userName": row["user_name"],
+            "houseId": row["house_id"],
+        }
+        for row in db.list_players()
+    ]
+
+@app.put('/admin/players/{user_id}/house', dependencies=[Depends(require_admin_auth)])
+async def assign_player_house(user_id: str, request: Request):
+    house_id = (await request.json()).get('houseId')
+    # bool is an int subclass - reject it so `true` doesn't quietly mean house 1.
+    if not isinstance(house_id, int) or isinstance(house_id, bool):
+        raise HTTPException(status_code=400, detail="houseId must be an integer")
+
+    result = db.assign_player_house(user_id, house_id)
+    if result == PlayerHouseResult.PLAYER_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="Player not found")
+    if result == PlayerHouseResult.HOUSE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="House not found")
+    if result == PlayerHouseResult.ALREADY_ASSIGNED:
+        raise HTTPException(status_code=409, detail="Player is already in another house")
+    return {"userId": user_id, "houseId": house_id}
+
+@app.delete('/admin/players/{user_id}/house', dependencies=[Depends(require_admin_auth)])
+async def unassign_player_house(user_id: str):
+    if not db.unassign_player_house(user_id):
+        raise HTTPException(status_code=404, detail="Player isn't in a house")
     return Response(status_code=200)

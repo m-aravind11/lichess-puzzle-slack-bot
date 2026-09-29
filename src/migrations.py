@@ -145,6 +145,35 @@ def _0009_add_closed_at_to_puzzles(conn) -> None:
         conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN closed_at TEXT")
 
 
+def _0010_create_houses_tables(conn) -> None:
+    # A player with no active player_houses row is "not assigned". Players
+    # themselves aren't a table - they're whoever has submissions - so the
+    # answer-submission path stays a single write. Houses are never deleted, so
+    # house_id always resolves; NOCASE keeps "Gryffindor" and "gryffindor" from
+    # both existing. Assignments are soft-deleted like submissions: the partial
+    # unique index allows one active row per player, alongside any inactive ones.
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS houses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS player_houses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            house_id INTEGER NOT NULL REFERENCES houses(id),
+            assigned_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_player_houses_active_unique
+        ON player_houses(user_id) WHERE active = 1
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -155,6 +184,7 @@ MIGRATIONS = [
     ("0007_add_puzzle_queue_to_puzzles", _0007_add_puzzle_queue_to_puzzles),
     ("0008_simplify_puzzle_timestamps", _0008_simplify_puzzle_timestamps),
     ("0009_add_closed_at_to_puzzles", _0009_add_closed_at_to_puzzles),
+    ("0010_create_houses_tables", _0010_create_houses_tables),
 ]
 
 
