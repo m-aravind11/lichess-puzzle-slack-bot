@@ -326,6 +326,7 @@ def post_leaderboard(monkeypatch):
     monkeypatch.setattr(app_module.slack_client, "chat_postMessage", post)
 
     def run(board):
+        monkeypatch.setattr(db, "is_holiday", lambda date: False)
         monkeypatch.setattr(db, "get_leaderboard", lambda: board)
         response = TestClient(app_module.app).post(
             "/admin/leaderboard:send", headers={"Authorization": "Bearer s3cr3t"},

@@ -1,120 +1,81 @@
 # Lichess Puzzle Slack Bot
 
-Posts the Lichess daily puzzle to Slack. People answer through a private modal
-(not a thread reply, so answers can't be copied), get DMed the result, and
-there's a points-based leaderboard.
+A daily chess puzzle for your Slack channel.
+
+Every day the bot posts a Lichess puzzle. People answer through a private
+popup rather than a thread reply, so nobody can copy anyone else's answer.
+Each person gets their result by DM, and a leaderboard keeps score.
 
 ## How it works
 
-1. The `/admin/dailyPuzzle:send` cron fetches the day's puzzle - the oldest
-   entry in the curated queue (`POST /admin/puzzles`) if there is one,
-   otherwise a random Lichess puzzle - and posts one Slack message: the board
-   image (linked straight from
-   [chessvision.ai](https://fen2image.chessvision.ai), no upload needed) plus
-   a "Submit Answer" button. The puzzle's FEN, solution, and this message's
-   `ts` are saved to the DB, keyed by puzzle id. Queued and posted puzzles share
-   the `puzzles` table; `posted_at` is empty until a puzzle is posted, and
-   its UTC date is the puzzle's day.
-2. Clicking the button opens a modal (`POST /webhooks/slack`). Submitting
-   it checks the moves against the solution, scores it, records the
-   submission, and DMs the result. A correct answer also gets a "solved it in
-   M:SS (+N pts)" reply posted in the puzzle's thread.
-3. `/admin/leaderboard:send` posts current standings to the channel. The
-   same standings are on the web at `/leaderboard` (linked from `/`, needs
-   `CRON_SECRET`). `standings.build_standings()` computes them once; the Slack
-   post (`slack_helpers.format_leaderboard_post`) and the web page only
-   render it.
+1. **The puzzle is posted.** Every day the bot posts a puzzle with a
+   picture of the board and a **Submit Answer** button.
+2. **People answer privately.** The button opens a popup where you type your
+   moves. The bot checks them and DMs you the result. Correct solves get a
+   shout-out in the thread.
+3. **The solution is revealed.** The next day the bot posts the solution,
+   followed by the leaderboard.
 
-See [API.md](API.md) for the full HTTP API (routes, auth, params, responses).
+## Features
 
-## Storage
+- **Scoring.** Faster correct answers earn more points, and wrong answers
+  earn none.
+- **Leaderboard.** Ranks players by points and tracks streaks of correct
+  answers, calling out milestones. It's posted to Slack and also viewable on
+  the web.
+- **Houses.** Players can be grouped into teams that compete on a house
+  leaderboard.
+- **Holidays.** Pick days off, and no puzzle is posted. Holidays never break
+  anyone's streak.
+- **Curated puzzles.** Queue specific puzzles to post next. Otherwise the bot
+  picks a random one.
 
-Turso (hosted libSQL), not a local SQLite file - Vercel's serverless
-functions have a read-only filesystem outside `/tmp`, and `/tmp` doesn't
-persist between invocations. Schema migrations live in `src/migrations.py`
-and aren't run automatically on startup (that check alone added seconds to
-every cold start); trigger them after deploying a schema change:
+The web pages for the leaderboard, houses and holidays are linked from the
+home page and ask for the admin secret.
 
-```
-curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrations:run \
-  -H "Authorization: Bearer $CRON_SECRET"
-```
+## Running it
 
-## Scoring
+Built with Python (FastAPI) and deployed on Vercel. Data is stored in
+[Turso](https://turso.tech). A Cloudflare Worker cron (in
+`cloudflare-worker/`) triggers the daily posts.
 
-A correct answer is worth `MAX_SCORE` (10) points, decayed by how long after
-the puzzle was posted it was submitted - points halve every
-`HALF_LIFE_MINUTES` (120), so a solve 2 hours in is worth 5, 4 hours in worth
-2.5 (rounded), and so on. A wrong answer is worth 0. If the puzzle's post
-time can't be determined (no `slack_ts`, or a negative elapsed time from a
-stale repost), the submission gets full credit rather than being penalized
-for a measurement that isn't there. See `src/scoring.py`.
+### Environment variables
 
-The leaderboard ranks by total points, ties broken by fastest average solve
-time (correct answers only).
+| Variable | What it is |
+|---|---|
+| `LICHESS_OAUTH_TOKEN` | Slack bot token (`xoxb-...`). The name is historical. |
+| `SLACK_CHANNEL_ID` | Channel to post in |
+| `SLACK_SIGNING_SECRET` | Verifies requests come from Slack |
+| `TURSO_DATABASE_URL` | Database URL (`libsql://...`) |
+| `TURSO_AUTH_TOKEN` | Database token |
+| `ADMIN_SECRET` | Password for the admin pages and API |
+| `CRON_SECRET` | Used only by the Cloudflare cron |
 
-It also shows each player's current streak: consecutive puzzles answered
-correctly. A wrong or missing answer breaks it; a day with no puzzle posted, or
-a deactivated puzzle, doesn't. While the latest puzzle is still open, players
-who haven't answered it yet keep their streak. Hitting 3, 5, 10, 25, 50 or 100
-gets an @-mention shout-out under the table (`Streaks.MILESTONES` in `src/constants.py`).
-
-## Houses
-
-Players can be grouped into houses for a house leaderboard. Manage them at
-`/houses` (a static page that asks for `CRON_SECRET`, then calls the
-`/admin/houses` and `/admin/players` routes). Players are whoever has
-submitted an answer; the mapping lives in `player_houses`, where no active
-row means "not assigned" (rows are soft-deleted via `active`, like puzzles and
-submissions). Houses can only be created - not renamed or deleted. A
-player's house is fixed once assigned; when they leave the company, their
-mapping is soft-deleted (unassigned).
-
-House standings go under the player table in the leaderboard post: each
-house's points are the sum of its players' points, ties broken by more correct
-answers. Players never assigned a house aren't counted; a player who left the
-company still counts toward their house.
-
-## Answer modal
-
-The modal only asks for the player's own moves, one per ply of theirs, in
-order - not the opponent's replies. Its label states the puzzle length
-directly ("This is a 3-move puzzle", the standard "mate in N" sense -
-`open_answer_modal` reads it off `solution[0::2]`) so the user knows where
-their line ends.
-
-Move checking (`LichessDailyPuzzle.check_answer`) parses submitted moves with
-`python-chess` and compares them to the solution's moves at those plies
-(`solution[0::2]`) using parsed `Move` objects instead of raw strings, so
-`Qe2`, `Qxe2`, `Q*e2`, and `qxe2#` all count as the same move. The opponent's
-replies (`solution[1::2]`) come straight from the puzzle's own solution and
-are never something the user has to guess - Lichess's solution only records
-one of what can be several equally valid opponent replies, so requiring an
-exact guess there would reject correct lines.
-
-## Local setup
+### Locally
 
 ```
 pip install -r requirements-dev.txt
-export LICHESS_OAUTH_TOKEN=xoxb-...  # Slack bot token (historical name)
-export SLACK_CHANNEL_ID=...
-export SLACK_SIGNING_SECRET=...
-export TURSO_DATABASE_URL=libsql://...
-export TURSO_AUTH_TOKEN=...
-export CRON_SECRET=...               # any string; admin routes reject all requests without it
+export LICHESS_OAUTH_TOKEN=... SLACK_CHANNEL_ID=... SLACK_SIGNING_SECRET=... \
+       TURSO_DATABASE_URL=... TURSO_AUTH_TOKEN=... ADMIN_SECRET=... CRON_SECRET=...
 uvicorn app:app --reload --app-dir src
 ```
 
-Slack needs a public HTTPS URL for `/webhooks/slack` - use ngrok locally
-and point the Slack app's Request URL at it. To configure the Slack app
-itself, paste `manifest.json` into the App Manifest tab at api.slack.com/apps
-(swap in your host in the request URL) and reinstall.
+Slack has to reach your machine, so expose it with ngrok and set the Slack
+app's Request URL to `https://<your-host>/webhooks/slack`. To set up the
+Slack app itself, paste `manifest.json` into the App Manifest tab at
+api.slack.com/apps.
 
-Run tests with:
+Run the tests with `pytest`. They don't need real Slack or Turso credentials.
+
+### After deploying
+
+If the deploy changed the database schema, run the migrations:
 
 ```
-pytest
+curl -X POST https://<your-host>/admin/migrations:run \
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
-`tests/conftest.py` puts `src/` on `sys.path` and sets dummy credentials so
-modules can be imported without a real Turso/Slack connection.
+## More
+
+[API.md](API.md) documents every route.

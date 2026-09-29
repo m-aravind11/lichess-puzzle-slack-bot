@@ -4,17 +4,23 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /`, `GET /leaderboard`, `GET /houses` and
-`POST /webhooks/slack` requires:
+Every route below except `GET /`, `GET /leaderboard`, `GET /houses`,
+`GET /holidays` and `POST /webhooks/slack` requires a bearer token. There are
+two secrets:
+
+- `ADMIN_SECRET` - for people (the admin pages, curl, Postman). Accepted by
+  every admin route.
+- `CRON_SECRET` - for the Cloudflare cron only. Accepted by just the three
+  routes it calls: `POST /admin/dailyPuzzle:send`,
+  `POST /admin/puzzle:revealSolution` and `POST /admin/leaderboard:send`.
 
 ```
-Authorization: Bearer $CRON_SECRET
+Authorization: Bearer $ADMIN_SECRET
 ```
 
-Missing or wrong token -> `401 Invalid Bearer Token`. This fails closed: if
-`CRON_SECRET` isn't set in the environment, every route above rejects every
-request (nothing can authenticate against a secret that doesn't exist).
-`CRON_SECRET` must be set, in every environment including local dev.
+Missing or wrong token -> `401 Invalid Bearer Token`. This fails closed: an
+unset secret matches nothing, so with `ADMIN_SECRET` unset every admin route
+rejects every request. Set both, in every environment including local dev.
 
 `POST /webhooks/slack` is authenticated differently: Slack signs each
 request (see `src/slack_verify.py`), and a missing/stale/invalid signature
@@ -29,14 +35,15 @@ Serves the static `index.html`. No auth, no response body documented here.
 
 ---
 
-## `GET /leaderboard`, `GET /houses`
+## `GET /leaderboard`, `GET /houses`, `GET /holidays`
 
-Serve the web leaderboard (`src/static/leaderboard.html`) and the house
-management page (`src/static/houses.html`), both linked from `/`. No auth -
-the pages hold no data; they ask for `CRON_SECRET` and use it to call the
-admin routes below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`).
-The secret is kept in the tab's `sessionStorage`, shared by both pages, so
-unlocking one unlocks the other. Shared page code lives in
+Serve the web leaderboard (`src/static/leaderboard.html`), the house
+management page (`src/static/houses.html`) and the holiday calendar
+(`src/static/holidays.html`), all linked from `/`. No auth - the pages hold
+no data; they ask for `ADMIN_SECRET` and use it to call the admin routes
+below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`;
+`/admin/holidays`). The secret is kept in the tab's `sessionStorage`, shared
+by all the pages, so unlocking one unlocks the others. Shared page code lives in
 `src/static/admin.js` / `admin.css`.
 
 ---
@@ -56,7 +63,9 @@ when that queue is empty.
 | `force`      | If today's puzzle was already sent, **resend that same puzzle** (re-post to Slack, no new fetch, no new DB row). Use this for a retry after a network/Slack failure. If nothing active exists for today (e.g. it was deactivated), falls back to generating a fresh one. |
 | `newPuzzle` | Always fetches a **different** puzzle and posts+saves it, regardless of whether one was already sent today. Lichess has no stable "today's puzzle" id (unlike the official daily puzzle), so this is the explicit way to ask for a different one rather than a resend. |
 
-With neither flag: if a puzzle was already sent today (active or
+With neither flag: nothing is posted if today is a holiday (see
+`PUT /admin/holidays/{date}`); the flags are manual, so they post anyway. And
+if a puzzle was already sent today (active or
 deactivated), this is a no-op. It protects against a duplicate cron trigger
 spamming the channel with a second, different random puzzle.
 
@@ -71,10 +80,10 @@ when `newPuzzle` is absent (or set to `false`).
 
 ```
 curl -X POST "https://.../admin/dailyPuzzle:send" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 
 curl -X POST "https://.../admin/dailyPuzzle:send?force=true" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -101,7 +110,7 @@ takes it out of the queue and `:reactivate` puts it back.
 
 ```
 curl -X POST "https://.../admin/puzzles" \
-  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Authorization: Bearer $ADMIN_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"puzzleId": "abc123"}'
 ```
@@ -127,7 +136,7 @@ Lists puzzles, queued and posted.
 
 ```
 curl "https://.../admin/puzzles?state=queued" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -152,7 +161,7 @@ agree.
 
 ```
 curl "https://.../admin/leaderboard" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -162,8 +171,8 @@ curl "https://.../admin/leaderboard" \
 Posts current standings to the Slack channel - the player table (with each
 player's house), streak milestones, then house standings (omitted while
 nobody is in a house).
-No-ops (still `200`) if the leaderboard is empty (nobody has submitted
-anything yet).
+No-ops (still `200`) if today is a holiday (it's only posted on puzzle days),
+or if the leaderboard is empty (nobody has submitted anything yet).
 
 **Responses**
 
@@ -173,7 +182,7 @@ anything yet).
 
 ```
 curl -X POST "https://.../admin/leaderboard:send" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -192,7 +201,7 @@ change.
 
 ```
 curl -X POST "https://.../admin/migrations:run" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -214,7 +223,7 @@ and frees the user to resubmit for that puzzle).
 
 ```
 curl -X DELETE "https://.../admin/submissions/42" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -238,7 +247,7 @@ the submissions first, or use the reactivate endpoint if this was a mistake).
 
 ```
 curl -X DELETE "https://.../admin/puzzles/abc123" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -260,7 +269,7 @@ Reverses a soft-delete from `DELETE /admin/puzzles/{puzzle_id}`.
 
 ```
 curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -276,7 +285,7 @@ Lists houses, alphabetically.
 
 ```
 curl "https://.../admin/houses" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ---
@@ -299,7 +308,7 @@ or deleted.
 
 ```
 curl -X POST "https://.../admin/houses" \
-  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Authorization: Bearer $ADMIN_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"name": "Gryffindor"}'
 ```
@@ -338,7 +347,7 @@ no-op `200`.
 
 ```
 curl -X PUT "https://.../admin/players/U0123ABC/house" \
-  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Authorization: Bearer $ADMIN_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"houseId": 1}'
 ```
@@ -360,8 +369,52 @@ house standings.
 
 ```
 curl -X DELETE "https://.../admin/players/U0123ABC/house" \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
+
+---
+
+## `GET /admin/holidays`
+
+Lists holidays - UTC dates the daily puzzle and leaderboard aren't posted -
+oldest first, past ones included. Streaks count posted puzzles, not calendar
+days, so a holiday never breaks one.
+
+**Responses**
+
+- `200`: array of `{date}`, `date` as `YYYY-MM-DD`
+- `401`: bad/missing bearer token
+
+---
+
+## `PUT /admin/holidays/{date}`
+
+Makes `date` (`YYYY-MM-DD`, UTC) a holiday. Idempotent - already a holiday
+is a no-op `200`.
+
+**Responses**
+
+- `200`: `{date}`
+- `400`: not `YYYY-MM-DD`, or in the past
+- `401`: bad/missing bearer token
+
+```
+curl -X PUT "https://.../admin/holidays/2026-12-25" \
+  -H "Authorization: Bearer $ADMIN_SECRET"
+```
+
+---
+
+## `DELETE /admin/holidays/{date}`
+
+Removes a holiday (hard delete - nothing references it).
+
+**Responses**
+
+- `200`: removed
+- `400`: not `YYYY-MM-DD`
+- `401`: bad/missing bearer token
+- `404`: not a holiday
 
 ---
 

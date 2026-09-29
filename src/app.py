@@ -1,4 +1,5 @@
 import contextvars
+import hmac
 import json
 import logging
 import os
@@ -53,10 +54,25 @@ async def assign_request_id(request: Request, call_next):
         request_id_var.reset(token)
 
 
+def _bearer_matches(request: Request, secret: str | None) -> bool:
+    # Fail closed: an unset secret (misconfigured deploy, accidentally deleted
+    # env var) matches nothing, rather than waving every request through.
+    # compare_digest, so response time doesn't leak how much of a guess was right.
+    return bool(secret) and hmac.compare_digest(
+        request.headers.get('Authorization', '').encode(), f'Bearer {secret}'.encode(),
+    )
+
+
 def require_admin_auth(request: Request) -> None:
-    # Fail closed: an unset CRON_SECRET (misconfigured deploy, accidentally
-    # deleted env var) must reject every admin request, not wave them all through.
-    if not Security.CRON_SECRET or request.headers.get('Authorization') != f'Bearer {Security.CRON_SECRET}':
+    # People - the admin pages, curl. ADMIN_SECRET only: the cron's secret
+    # never needs to reach a person, and each can be rotated on its own.
+    if not _bearer_matches(request, Security.ADMIN_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid Bearer Token")
+
+
+def require_cron_auth(request: Request) -> None:
+    # The scheduled routes. ADMIN_SECRET works too, for manual reruns (?force).
+    if not (_bearer_matches(request, Security.CRON_SECRET) or _bearer_matches(request, Security.ADMIN_SECRET)):
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
 
@@ -74,7 +90,11 @@ async def houses_page():
 async def leaderboard_page():
     return FileResponse(Paths.LEADERBOARD_HTML_PATH)
 
-@app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_admin_auth)])
+@app.get('/holidays')
+async def holidays_page():
+    return FileResponse(Paths.HOLIDAYS_HTML_PATH)
+
+@app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_cron_auth)])
 async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
     try:
         await lichess.handle_puzzle_generation_and_sending(force=force, new_puzzle=new_puzzle)
@@ -166,7 +186,7 @@ async def slack_interactions(request: Request):
 
     return Response(status_code=200)
 
-@app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_admin_auth)])
+@app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_cron_auth)])
 async def reveal_puzzle_solution():
     # Cron runs this the day after a puzzle is posted, before /admin/leaderboard:send
     # and the next /admin/dailyPuzzle:send, so the solution lands in-thread for
@@ -194,8 +214,14 @@ async def reveal_puzzle_solution():
         raise
     return Response(status_code=200)
 
-@app.post('/admin/leaderboard:send', dependencies=[Depends(require_admin_auth)])
+@app.post('/admin/leaderboard:send', dependencies=[Depends(require_cron_auth)])
 async def send_leaderboard():
+    # Posted only on puzzle days, like the puzzle itself.
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if db.is_holiday(date_str):
+        logger.info("admin/leaderboard:send: %s is a holiday, skipping", date_str)
+        return Response(status_code=200)
+
     try:
         board = db.get_leaderboard()
         if not board:
@@ -286,3 +312,31 @@ async def get_leaderboard():
             for m in standings["milestones"]
         ],
     }
+
+def _parse_holiday_date(date: str) -> str:
+    # strptime rather than date.fromisoformat, which also takes compact forms
+    # like 20240101 - rows must match substr(posted_at, 1, 10) exactly.
+    try:
+        return datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+
+@app.get('/admin/holidays', dependencies=[Depends(require_admin_auth)])
+async def list_holidays():
+    return [{"date": date} for date in db.list_holidays()]
+
+@app.put('/admin/holidays/{date}', dependencies=[Depends(require_admin_auth)])
+async def add_holiday(date: str):
+    date = _parse_holiday_date(date)
+    # A past day's puzzle has already gone out (or not), so a holiday there
+    # would change nothing. Dates are UTC, like a puzzle's day.
+    if date < datetime.now(timezone.utc).strftime("%Y-%m-%d"):
+        raise HTTPException(status_code=400, detail="date is in the past")
+    db.add_holiday(date)
+    return {"date": date}
+
+@app.delete('/admin/holidays/{date}', dependencies=[Depends(require_admin_auth)])
+async def remove_holiday(date: str):
+    if not db.remove_holiday(_parse_holiday_date(date)):
+        raise HTTPException(status_code=404, detail="Not a holiday")
+    return Response(status_code=200)
