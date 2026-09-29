@@ -144,6 +144,29 @@
   section { margin-bottom: 40px; }
   section:last-of-type { margin-bottom: 28px; }
 
+  /* ---- page links ---- */
+  .links {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .link-card {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 15px 17px;
+    box-shadow: var(--shadow);
+    color: var(--fg);
+    text-decoration: none;
+    transition: border-color 0.15s;
+  }
+  .link-card:hover { border-color: var(--accent); }
+  .link-card strong { display: flex; justify-content: space-between; font-size: 1rem; margin-bottom: 4px; }
+  .link-card strong::after { content: "\2192"; color: var(--accent); }
+  .link-card span { color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
+  @media (max-width: 420px) { .links { grid-template-columns: 1fr; } }
+
   /* ---- steps ---- */
   .steps {
     display: grid;
@@ -302,6 +325,20 @@
       scores your submitted line against the solution, and keeps a running leaderboard of who's solving them.
     </p>
   </div>
+
+  <section>
+    <h2 class="eyebrow">Standings</h2>
+    <div class="links">
+      <a class="link-card" href="/leaderboard">
+        <strong>Leaderboard</strong>
+        <span>Points, streaks and house standings.</span>
+      </a>
+      <a class="link-card" href="/houses">
+        <strong>Houses</strong>
+        <span>Assign players to their houses.</span>
+      </a>
+    </div>
+  </section>
 
   <section>
     <h2 class="eyebrow">How it works</h2>

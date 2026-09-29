@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Leaderboard - Lichess Puzzle Bot</title>
+<link rel="stylesheet" href="/static/admin.css">
+<style>
+  h2.eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  section { margin-bottom: 32px; }
+
+  /* ---- streak milestones ---- */
+  .milestones {
+    padding: 14px 18px;
+    border-left: 3px solid var(--accent);
+    line-height: 1.7;
+  }
+  .milestones strong { font-weight: 650; }
+  .milestones .days { color: var(--accent-strong); font-weight: 650; font-variant-numeric: tabular-nums; }
+
+  /* ---- houses: click one to filter the players below ---- */
+  .house-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .house-card {
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 12px 14px;
+    display: grid;
+    gap: 2px;
+    font-weight: 400;
+  }
+  .house-card:hover { border-color: var(--muted); }
+  .house-card[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .house-card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .house-card .hname { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .house-card .rank { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .house-card .pts { font-size: 1.5rem; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .house-card .pts small { font-size: 0.8rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .house-card .meta { color: var(--muted); font-size: 0.8rem; }
+
+  /* ---- players ---- */
+  .table-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .showing { color: var(--muted); font-size: 0.85rem; }
+  .showing button { background: none; border: none; padding: 0 0 0 6px; color: var(--accent-strong); font-weight: 600; font-size: inherit; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  th { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+  th:first-child, td:first-child { padding-left: 16px; }
+  th:last-child, td:last-child { padding-right: 16px; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.rank { color: var(--muted); width: 1%; }
+  td.name { font-weight: 600; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  td.house { color: var(--accent-strong); }
+  td.house.none { color: var(--muted); }
+  td.points { font-weight: 700; }
+  .best { color: var(--muted); font-size: 0.8rem; margin-left: 4px; }
+
+  @media (max-width: 560px) {
+    .hide-sm, .best { display: none; }
+    th, td { padding: 9px 8px; }
+    th:first-child, td:first-child { padding-left: 12px; }
+    th:last-child, td:last-child { padding-right: 12px; }
+    td.name { max-width: 110px; }
+    table { font-size: 0.86rem; }
+    th { letter-spacing: 0.02em; font-size: 0.66rem; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/"><span class="brand-icon" aria-hidden="true"></span><span class="brand-text">Lichess Puzzle Bot</span></a>
+    <nav aria-label="Pages"><a href="/leaderboard" aria-current="page">Leaderboard</a><a href="/houses">Houses</a></nav>
+  </div>
+</header>
+<main>
+  <h1>Leaderboard</h1>
+  <p class="sub">Ranked by points - faster solves score higher; ties broken by fastest average solve time.</p>
+
+  <p class="loading" id="loading" hidden>Loading…</p>
+
+  <section id="unlockSection" hidden>
+    <form class="card unlock" id="unlockForm">
+      <p>Enter the admin secret to continue. It's kept only for this browser tab.</p>
+      <div class="row">
+        <input type="password" id="secret" placeholder="Admin secret" autocomplete="current-password" required>
+        <button class="btn-primary" type="submit">Unlock</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <section id="milestoneSection" hidden>
+      <h2 class="eyebrow">Streak milestones</h2>
+      <div class="card milestones" id="milestones"></div>
+    </section>
+
+    <section id="houseSection" hidden>
+      <h2 class="eyebrow">Houses</h2>
+      <div class="house-grid" id="houses"></div>
+    </section>
+
+    <section>
+      <div class="table-head">
+        <h2 class="eyebrow" style="flex:1;margin:0">Players</h2>
+        <span class="showing" id="showing"></span>
+      </div>
+      <div class="card table-wrap" id="players"></div>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/static/admin.js"></script>
+<script>
+  (function () {
+    var el = Admin.el;
+    // houseFilter: a house name, or null for everyone.
+    var state = { data: null, houseFilter: null };
+
+    function load() {
+      return Admin.api('GET', '/admin/leaderboard').then(function (data) {
+        state.data = data;
+        Admin.showApp();
+        render();
+      });
+    }
+
+    function joinNames(names) {
+      return names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+    }
+
+    function renderMilestones() {
+      var box = document.getElementById('milestones');
+      box.textContent = '';
+      var milestones = state.data.milestones;
+      document.getElementById('milestoneSection').hidden = !milestones.length;
+      milestones.forEach(function (m) {
+        var line = el('div');
+        line.appendChild(el('strong', null, joinNames(m.players)));
+        line.appendChild(document.createTextNode((m.players.length === 1 ? ' is' : ' are') + ' on a '));
+        line.appendChild(el('span', 'days', m.streak + '-day'));
+        line.appendChild(document.createTextNode(' streak.'));
+        box.appendChild(line);
+      });
+    }
+
+    function renderHouses() {
+      var grid = document.getElementById('houses');
+      grid.textContent = '';
+      var houses = state.data.houses;
+      document.getElementById('houseSection').hidden = !houses.length;
+      houses.forEach(function (house) {
+        var card = el('button', 'house-card');
+        card.type = 'button';
+        card.setAttribute('aria-pressed', String(state.houseFilter === house.name));
+        card.title = 'Show only ' + house.name;
+        var top = el('div', 'top');
+        top.appendChild(el('span', 'hname', house.name));
+        top.appendChild(el('span', 'rank', '#' + house.rank));
+        card.appendChild(top);
+        var pts = el('div', 'pts', String(house.points));
+        pts.appendChild(el('small', null, ' pts'));
+        card.appendChild(pts);
+        card.appendChild(el('div', 'meta', house.correct + ' solved · ' + house.players + (house.players === 1 ? ' player' : ' players')));
+        card.addEventListener('click', function () {
+          state.houseFilter = state.houseFilter === house.name ? null : house.name;
+          render();
+        });
+        grid.appendChild(card);
+      });
+    }
+
+    function renderPlayers() {
+      var wrap = document.getElementById('players');
+      wrap.textContent = '';
+      var players = state.data.players.filter(function (p) {
+        return state.houseFilter === null || p.house === state.houseFilter;
+      });
+
+      var showing = document.getElementById('showing');
+      showing.textContent = '';
+      if (state.houseFilter !== null) {
+        showing.appendChild(document.createTextNode(state.houseFilter));
+        var clear = el('button', null, 'Show all');
+        clear.type = 'button';
+        clear.addEventListener('click', function () { state.houseFilter = null; render(); });
+        showing.appendChild(clear);
+      }
+
+      if (!players.length) {
+        wrap.appendChild(el('p', 'empty', state.data.players.length ? 'Nobody in this house has played yet.' : 'No answers yet - standings appear after the first submission.'));
+        return;
+      }
+
+      var table = el('table');
+      var head = el('tr');
+      [['#', ''], ['Name', ''], ['House', 'hide-sm'], ['Points', 'num'], ['Solved', 'num'], ['Avg solve', 'num hide-sm'], ['Streak', 'num']].forEach(function (c) {
+        head.appendChild(el('th', c[1], c[0]));
+      });
+      var thead = el('thead');
+      thead.appendChild(head);
+      table.appendChild(thead);
+
+      var tbody = el('tbody');
+      players.forEach(function (p) {
+        var tr = el('tr');
+        tr.appendChild(el('td', 'rank num', String(p.rank)));
+        tr.appendChild(el('td', 'name', p.userName));
+        tr.appendChild(el('td', 'house hide-sm' + (p.house ? '' : ' none'), p.house || '-'));
+        tr.appendChild(el('td', 'points num', String(p.points)));
+        tr.appendChild(el('td', 'num', p.correct + '/' + p.attempted));
+        tr.appendChild(el('td', 'num hide-sm', p.avgSolveTime));
+        var streak = el('td', 'num', String(p.currentStreak));
+        if (p.bestStreak > p.currentStreak) streak.appendChild(el('span', 'best', 'best ' + p.bestStreak));
+        tr.appendChild(streak);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrap.appendChild(table);
+    }
+
+    function render() {
+      renderMilestones();
+      renderHouses();
+      renderPlayers();
+    }
+
+    Admin.start(load);
+  })();
+</script>
+</body>
+</html>

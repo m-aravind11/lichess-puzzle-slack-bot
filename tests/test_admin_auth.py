@@ -23,6 +23,7 @@ ADMIN_ROUTES = [
     ("GET", "/admin/players"),
     ("PUT", "/admin/players/U1/house"),
     ("DELETE", "/admin/players/U1/house"),
+    ("GET", "/admin/leaderboard"),
 ]
 
 HOUSE_DB_CALLS = ["list_houses", "create_house", "list_players", "assign_player_house", "unassign_player_house"]

@@ -148,6 +148,18 @@
             },
             "description": "Posts current standings to the real Slack channel."
           }
+        },
+        {
+          "name": "Get leaderboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/leaderboard",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "leaderboard"]
+            },
+            "description": "The same standings as JSON: players, houses, streak milestones."
+          }
         }
       ]
     },

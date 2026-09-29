@@ -5,6 +5,7 @@ import re
 class Paths:
     INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
     HOUSES_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'houses.html')
+    LEADERBOARD_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'leaderboard.html')
 
 
 class Security:
