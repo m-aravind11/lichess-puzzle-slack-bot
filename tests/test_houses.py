@@ -46,7 +46,7 @@ def patch_db(conn, monkeypatch):
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    monkeypatch.setattr(Security, "ADMIN_SECRET", "s3cr3t")
     return TestClient(app_module.app)
 
 

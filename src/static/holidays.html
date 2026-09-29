@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Holidays - Lichess Puzzle Bot</title>
+<link rel="icon" href="/static/favicon.png" type="image/png" sizes="64x64">
+<link rel="stylesheet" href="/static/admin.css">
+<style>
+  h2.eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  section { margin-bottom: 32px; }
+
+  /* ---- add form ---- */
+  .add { padding: 18px; display: flex; gap: 12px; align-items: flex-end; }
+  .field { display: grid; gap: 5px; flex: 1; min-width: 0; }
+  .field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+  .add button { height: 38px; }
+  /* An empty date input still shows dd/mm/yyyy in full text color, which reads
+     as filled in. It's required, so :invalid means "nothing picked yet". */
+  .add input[type="date"]:invalid { color: var(--muted); }
+
+  /* ---- list ---- */
+  .day {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto 28px;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 10px 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .day:last-child { border-bottom: none; }
+  /* A tear-off calendar page: month on top, day number below. */
+  .cal {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    text-align: center;
+    background: var(--surface);
+    line-height: 1;
+  }
+  .cal .m { display: block; background: var(--accent); color: var(--surface); font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 3px 0; }
+  .cal .d { display: block; font-size: 1.05rem; font-weight: 750; padding: 5px 0 6px; font-variant-numeric: tabular-nums; }
+  .day .when { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .day .rel { color: var(--muted); font-size: 0.85rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .day.today { background: var(--warn-soft); }
+  .day.today .cal .m { background: var(--warn); }
+  .day.today .rel { color: var(--warn); font-weight: 600; }
+  .day.past .when, .day.past .cal { opacity: 0.55; }
+  /* Consecutive days read as one break: no divider between them. */
+  .day.joined { border-bottom-color: transparent; padding-bottom: 4px; }
+  .day.joined + .day { padding-top: 4px; }
+
+  .remove {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+    font-weight: 400;
+    opacity: 0;
+  }
+  .day:hover .remove, .remove:focus-visible { opacity: 1; }
+  .remove:hover { background: var(--surface-2); color: var(--danger); }
+  @media (hover: none) { .remove { opacity: 0.6; } }
+
+  /* One heading + card per year, since the rows themselves don't show it. */
+  .year + .year { margin-top: 24px; }
+  #past { margin-top: 16px; }
+  .past-toggle { background: none; border: none; padding: 0; color: var(--accent-strong); font-weight: 600; font-size: 0.85rem; margin-top: 10px; }
+
+  @media (max-width: 480px) {
+    .day { grid-template-columns: 40px minmax(0, 1fr) auto 28px; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/"><img class="brand-icon" src="/static/knight.png" alt=""><span class="brand-text">Lichess Puzzle Bot</span></a>
+    <nav aria-label="Pages"><a href="/leaderboard">Leaderboard</a><a href="/houses">Houses</a><a href="/holidays" aria-current="page">Holidays</a></nav>
+  </div>
+</header>
+<main>
+  <h1>Holidays</h1>
+  <p class="sub">No puzzle is posted on these days. It's a break, not a miss - nobody's streak breaks. Dates are UTC, like puzzle days.</p>
+
+  <p class="loading" id="loading" hidden>Loading…</p>
+
+  <section id="unlockSection" hidden>
+    <form class="card unlock" id="unlockForm">
+      <p>Enter the admin secret to continue. It's kept only for this browser tab.</p>
+      <div class="row">
+        <input type="password" id="secret" placeholder="Admin secret" autocomplete="current-password" required>
+        <button class="btn-primary" type="submit">Unlock</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <section>
+      <form class="card add" id="addForm">
+        <div class="field">
+          <label for="date">Date</label>
+          <input type="date" id="date" required>
+        </div>
+        <button class="btn-primary" type="submit" id="addBtn">Add Holiday</button>
+      </form>
+    </section>
+
+    <section>
+      <div id="upcoming"></div>
+      <div id="pastWrap" hidden>
+        <button class="past-toggle" type="button" id="pastToggle"></button>
+        <div id="past" hidden></div>
+      </div>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/static/admin.js"></script>
+<script>
+  (function () {
+    var DAY_MS = 86400000;
+    var state = { dates: [], showPast: false };
+
+    var api = Admin.api, el = Admin.el, toast = Admin.toast;
+    var dateInput = document.getElementById('date');
+
+    // Everything is a UTC calendar date (YYYY-MM-DD), matching the server, so
+    // parse and format in UTC - local time would shift dates west of Greenwich.
+    function parse(iso) { return new Date(iso + 'T00:00:00Z'); }
+    function iso(d) { return d.toISOString().slice(0, 10); }
+    function today() { return iso(new Date()); }
+    function fmt(iso, opts) { return parse(iso).toLocaleDateString(undefined, Object.assign({ timeZone: 'UTC' }, opts)); }
+    function daysBetween(a, b) { return Math.round((parse(b) - parse(a)) / DAY_MS); }
+
+    function relative(date) {
+      var n = daysBetween(today(), date);
+      if (n === 0) return 'Today';
+      if (n === 1) return 'Tomorrow';
+      if (n === -1) return 'Yesterday';
+      return n > 0 ? 'in ' + n + ' days' : n * -1 + ' days ago';
+    }
+
+    function load() {
+      return api('GET', '/admin/holidays').then(function (rows) {
+        state.dates = rows.map(function (r) { return r.date; });
+        Admin.showApp();
+        render();
+      });
+    }
+
+    function renderByYear(container, dates, emptyText) {
+      container.textContent = '';
+      if (!dates.length) {
+        var card = el('div', 'card');
+        card.appendChild(el('p', 'empty', emptyText));
+        container.appendChild(card);
+        return;
+      }
+      var years = [];
+      dates.forEach(function (date) {
+        var year = date.slice(0, 4);
+        if (!years.length || years[years.length - 1].year !== year) years.push({ year: year, dates: [] });
+        years[years.length - 1].dates.push(date);
+      });
+      years.forEach(function (group) {
+        var block = el('div', 'year');
+        block.appendChild(el('h2', 'eyebrow', group.year));
+        var card = el('div', 'card');
+        renderList(card, group.dates);
+        block.appendChild(card);
+        container.appendChild(block);
+      });
+    }
+
+    function renderList(container, dates) {
+      var t = today();
+      dates.forEach(function (date, i) {
+        // Upcoming is ascending, past descending - either way neighbours are a day apart.
+        var nextAdjacent = i < dates.length - 1 && Math.abs(daysBetween(date, dates[i + 1])) === 1;
+        var cls = 'day';
+        if (date === t) cls += ' today';
+        if (date < t) cls += ' past';
+        if (nextAdjacent) cls += ' joined';
+        var row = el('div', cls);
+
+        var cal = el('div', 'cal');
+        cal.setAttribute('role', 'img');
+        cal.setAttribute('aria-label', fmt(date, { month: 'long', day: 'numeric', year: 'numeric' }));
+        cal.appendChild(el('span', 'm', fmt(date, { month: 'short' })));
+        cal.appendChild(el('span', 'd', fmt(date, { day: 'numeric' })));
+        row.appendChild(cal);
+
+        row.appendChild(el('div', 'when', fmt(date, { weekday: 'long' })));
+        row.appendChild(el('div', 'rel', relative(date)));
+
+        var remove = el('button', 'remove', '×');
+        remove.type = 'button';
+        remove.title = 'Remove holiday';
+        remove.setAttribute('aria-label', 'Remove holiday on ' + fmt(date, { month: 'long', day: 'numeric', year: 'numeric' }));
+        remove.addEventListener('click', function () { removeHoliday(date, remove); });
+        row.appendChild(remove);
+
+        container.appendChild(row);
+      });
+    }
+
+    function render() {
+      var t = today();
+      var upcoming = state.dates.filter(function (d) { return d >= t; });
+      // Most recent first - the recent past is what anyone would look back for.
+      var past = state.dates.filter(function (d) { return d < t; }).reverse();
+
+      renderByYear(document.getElementById('upcoming'), upcoming, 'No upcoming holidays - a puzzle goes out every day.');
+
+      document.getElementById('pastWrap').hidden = !past.length;
+      document.getElementById('pastToggle').textContent = (state.showPast ? 'Hide' : 'Show') + ' past holidays (' + past.length + ')';
+      var pastList = document.getElementById('past');
+      pastList.hidden = !state.showPast;
+      if (state.showPast) renderByYear(pastList, past);
+
+      dateInput.min = t;
+    }
+
+    function removeHoliday(date, button) {
+      if (!confirm('Remove the holiday on ' + fmt(date, { weekday: 'long', month: 'long', day: 'numeric' }) + '? A puzzle will be posted that day.')) return;
+      button.disabled = true;
+      api('DELETE', '/admin/holidays/' + date).then(function () {
+        toast('Removed ' + fmt(date, { month: 'short', day: 'numeric' }));
+        return load();
+      }).catch(function (err) {
+        toast(err.message, true);
+        load().catch(function () {});
+      });
+    }
+
+    document.getElementById('addForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var date = dateInput.value;
+      if (!date) return;
+      if (state.dates.indexOf(date) !== -1) {
+        toast(fmt(date, { month: 'short', day: 'numeric' }) + ' is already a holiday');
+        return;
+      }
+
+      var button = document.getElementById('addBtn');
+      button.disabled = true;
+      api('PUT', '/admin/holidays/' + date).then(function () {
+        toast('Added ' + fmt(date, { month: 'short', day: 'numeric' }));
+        dateInput.value = '';
+      }).catch(function (err) {
+        toast(err.message, true);
+      }).then(function () {
+        button.disabled = false;
+        return load();
+      }).catch(function () {});
+    });
+
+    document.getElementById('pastToggle').addEventListener('click', function () {
+      state.showPast = !state.showPast;
+      render();
+    });
+
+    Admin.start(load);
+  })();
+</script>
+</body>
+</html>

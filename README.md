@@ -21,7 +21,7 @@ there's a points-based leaderboard.
    M:SS (+N pts)" reply posted in the puzzle's thread.
 3. `/admin/leaderboard:send` posts current standings to the channel. The
    same standings are on the web at `/leaderboard` (linked from `/`, needs
-   `CRON_SECRET`). `standings.build_standings()` computes them once; the Slack
+   `ADMIN_SECRET`). `standings.build_standings()` computes them once; the Slack
    post (`slack_helpers.format_leaderboard_post`) and the web page only
    render it.
 
@@ -37,7 +37,7 @@ every cold start); trigger them after deploying a schema change:
 
 ```
 curl -X POST https://lichess-puzzle-slack-bot.vercel.app/admin/migrations:run \
-  -H "Authorization: Bearer $CRON_SECRET"
+  -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
 ## Scoring
@@ -62,7 +62,7 @@ gets an @-mention shout-out under the table (`Streaks.MILESTONES` in `src/consta
 ## Houses
 
 Players can be grouped into houses for a house leaderboard. Manage them at
-`/houses` (a static page that asks for `CRON_SECRET`, then calls the
+`/houses` (a static page that asks for `ADMIN_SECRET`, then calls the
 `/admin/houses` and `/admin/players` routes). Players are whoever has
 submitted an answer; the mapping lives in `player_houses`, where no active
 row means "not assigned" (rows are soft-deleted via `active`, like puzzles and
@@ -74,6 +74,14 @@ House standings go under the player table in the leaderboard post: each
 house's points are the sum of its players' points, ties broken by more correct
 answers. Players never assigned a house aren't counted; a player who left the
 company still counts toward their house.
+
+## Holidays
+
+Days off are managed at `/holidays` (asks for `ADMIN_SECRET`, calls
+`/admin/holidays`). On a holiday (a UTC date, like a puzzle's day) the daily
+puzzle cron posts nothing, and neither does the leaderboard cron - it's only
+posted on puzzle days. The manual `force` / `newPuzzle` flags still post.
+Streaks count posted puzzles, not calendar days, so a holiday breaks nobody's.
 
 ## Answer modal
 
@@ -101,7 +109,8 @@ export SLACK_CHANNEL_ID=...
 export SLACK_SIGNING_SECRET=...
 export TURSO_DATABASE_URL=libsql://...
 export TURSO_AUTH_TOKEN=...
-export CRON_SECRET=...               # any string; admin routes reject all requests without it
+export ADMIN_SECRET=...              # for people: admin pages, curl; admin routes reject all requests without it
+export CRON_SECRET=...               # for the Cloudflare cron only; opens just the routes it calls
 uvicorn app:app --reload --app-dir src
 ```
 

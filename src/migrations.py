@@ -174,6 +174,19 @@ def _0010_create_houses_tables(conn) -> None:
     """)
 
 
+def _0011_create_holidays_table(conn) -> None:
+    # One row per UTC date the daily puzzle is skipped (see
+    # LichessDailyPuzzle.handle_puzzle_generation_and_sending). Rows are
+    # hard-deleted, unlike puzzles/submissions/houses - nothing references a
+    # holiday, so there's no history to keep.
+    conn.cursor().execute("""
+        CREATE TABLE IF NOT EXISTS holidays (
+            date TEXT PRIMARY KEY,
+            added_at TEXT NOT NULL
+        )
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -185,6 +198,7 @@ MIGRATIONS = [
     ("0008_simplify_puzzle_timestamps", _0008_simplify_puzzle_timestamps),
     ("0009_add_closed_at_to_puzzles", _0009_add_closed_at_to_puzzles),
     ("0010_create_houses_tables", _0010_create_houses_tables),
+    ("0011_create_holidays_table", _0011_create_holidays_table),
 ]
 
 

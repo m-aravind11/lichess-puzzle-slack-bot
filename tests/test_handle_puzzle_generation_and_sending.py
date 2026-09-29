@@ -36,6 +36,7 @@ def _lichess(monkeypatch, existing_active=None, sent_today=False):
     monkeypatch.setattr(lichess, "send_puzzle_to_slack", MagicMock(return_value="1700000000.0"))
     monkeypatch.setattr(db, "get_active_puzzle_by_date", MagicMock(return_value=existing_active))
     monkeypatch.setattr(db, "puzzle_sent_for_date", MagicMock(return_value=sent_today))
+    monkeypatch.setattr(db, "is_holiday", MagicMock(return_value=False))
     monkeypatch.setattr(db, "update_puzzle_slack_ts", MagicMock())
     monkeypatch.setattr(db, "save_puzzle", MagicMock())
     monkeypatch.setattr(db, "get_next_queued_puzzle", MagicMock(return_value=None))

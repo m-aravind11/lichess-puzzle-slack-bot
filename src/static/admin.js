@@ -1,4 +1,4 @@
-/* Shared by the admin pages (leaderboard, houses). Each page has a #loading
+/* Shared by the admin pages (leaderboard, houses, holidays). Each page has a #loading
    line, an #unlockSection form (#unlockForm, #secret), an #app container and a
    #toast - all but #toast start hidden - and calls Admin.start(load); load()
    fetches its data and calls Admin.showApp(). The secret lives in

@@ -8,14 +8,19 @@ import app as app_module
 import db
 from constants import Security
 
-ADMIN_ROUTES = [
+# What the Cloudflare cron calls - CRON_SECRET or ADMIN_SECRET.
+CRON_ROUTES = [
     ("POST", "/admin/dailyPuzzle:send"),
+    ("POST", "/admin/puzzle:revealSolution"),
+    ("POST", "/admin/leaderboard:send"),
+]
+
+# Everything else - ADMIN_SECRET only.
+ADMIN_ROUTES = [
     ("POST", "/admin/migrations:run"),
     ("DELETE", "/admin/submissions/1"),
     ("DELETE", "/admin/puzzles/p1"),
     ("POST", "/admin/puzzles/p1:reactivate"),
-    ("POST", "/admin/puzzle:revealSolution"),
-    ("POST", "/admin/leaderboard:send"),
     ("POST", "/admin/puzzles"),
     ("GET", "/admin/puzzles"),
     ("GET", "/admin/houses"),
@@ -24,50 +29,73 @@ ADMIN_ROUTES = [
     ("PUT", "/admin/players/U1/house"),
     ("DELETE", "/admin/players/U1/house"),
     ("GET", "/admin/leaderboard"),
+    ("GET", "/admin/holidays"),
+    ("PUT", "/admin/holidays/2030-01-01"),
+    ("DELETE", "/admin/holidays/2030-01-01"),
 ]
 
+ALL_ROUTES = CRON_ROUTES + ADMIN_ROUTES
+
 HOUSE_DB_CALLS = ["list_houses", "create_house", "list_players", "assign_player_house", "unassign_player_house"]
+HOLIDAY_DB_CALLS = ["list_holidays", "is_holiday", "add_holiday", "remove_holiday"]
 
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    monkeypatch.setattr(Security, "CRON_SECRET", "cr0n")
+    monkeypatch.setattr(Security, "ADMIN_SECRET", "s3cr3t")
     return TestClient(app_module.app)
 
 
-@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
-def test_missing_auth_header_is_rejected(client, method, path):
-    response = client.request(method, path)
-    assert response.status_code == 401
-
-
-@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
-def test_wrong_bearer_token_is_rejected(client, method, path):
-    response = client.request(method, path, headers={"Authorization": "Bearer nope"})
-    assert response.status_code == 401
-
-
-@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
-def test_auth_is_checked_before_the_handler_runs(client, method, path, monkeypatch):
-    # None of these should touch the DB or Slack when auth fails - patch every
-    # handler's underlying call with something that fails loudly if invoked.
-    monkeypatch.setattr(db, "init_db", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "deactivate_submission", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "deactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "reactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "list_puzzles", MagicMock(side_effect=AssertionError("should not run")))
-    for name in HOUSE_DB_CALLS:
+def block_handlers(monkeypatch):
+    """Makes every handler's underlying call fail loudly if a rejected request reaches it."""
+    for name in (
+        "init_db", "deactivate_submission", "deactivate_puzzle", "reactivate_puzzle", "close_previous_puzzle",
+        "get_leaderboard", "queue_puzzle", "list_puzzles", *HOUSE_DB_CALLS, *HOLIDAY_DB_CALLS,
+    ):
         monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(app_module.lichess, "get_puzzle_by_id", MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(
         app_module.lichess, "handle_puzzle_generation_and_sending",
         AsyncMock(side_effect=AssertionError("should not run")),
     )
+
+
+@pytest.mark.parametrize("method,path", ALL_ROUTES)
+def test_missing_auth_header_is_rejected(client, method, path):
     response = client.request(method, path)
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("method,path", ALL_ROUTES)
+def test_wrong_bearer_token_is_rejected(client, method, path):
+    response = client.request(method, path, headers={"Authorization": "Bearer nope"})
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("method,path", ALL_ROUTES)
+def test_auth_is_checked_before_the_handler_runs(client, method, path, monkeypatch):
+    block_handlers(monkeypatch)
+    response = client.request(method, path)
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
+def test_cron_secret_is_rejected_outside_the_cron_routes(client, method, path, monkeypatch):
+    # The cron's key opens only what the cron calls - a leaked copy can't
+    # delete submissions, rewrite houses or run migrations.
+    block_handlers(monkeypatch)
+    response = client.request(method, path, headers={"Authorization": "Bearer cr0n"})
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("token", ["cr0n", "s3cr3t"])
+def test_cron_routes_accept_either_secret(client, monkeypatch, token):
+    handler = AsyncMock()
+    monkeypatch.setattr(app_module.lichess, "handle_puzzle_generation_and_sending", handler)
+    response = client.post("/admin/dailyPuzzle:send", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    handler.assert_awaited_once()
 
 
 def test_correct_bearer_token_reaches_the_handler(client, monkeypatch):
@@ -152,30 +180,24 @@ def test_list_puzzles_rejects_an_unknown_state(client, monkeypatch):
     assert response.status_code == 400
 
 
-@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
-def test_unset_cron_secret_fails_closed(method, path, monkeypatch):
+@pytest.mark.parametrize("method,path", ALL_ROUTES)
+def test_unset_secrets_fail_closed(method, path, monkeypatch):
     # A misconfigured deploy (or an accidentally deleted env var) must reject
     # every admin route, not wave every request through unauthenticated.
     monkeypatch.setattr(Security, "CRON_SECRET", None)
-    monkeypatch.setattr(db, "deactivate_submission", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "deactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "reactivate_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "get_leaderboard", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "init_db", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "queue_puzzle", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(db, "list_puzzles", MagicMock(side_effect=AssertionError("should not run")))
-    for name in HOUSE_DB_CALLS:
-        monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(app_module.lichess, "get_puzzle_by_id", MagicMock(side_effect=AssertionError("should not run")))
-    monkeypatch.setattr(
-        app_module.lichess, "handle_puzzle_generation_and_sending",
-        AsyncMock(side_effect=AssertionError("should not run")),
-    )
+    monkeypatch.setattr(Security, "ADMIN_SECRET", None)
+    block_handlers(monkeypatch)
     client = TestClient(app_module.app)
-    response = client.request(method, path)
-    assert response.status_code == 401
+    assert client.request(method, path).status_code == 401
+    # "Bearer None" is what an unset secret would stringify to - it must not match either.
+    assert client.request(method, path, headers={"Authorization": "Bearer None"}).status_code == 401
+    assert client.request(method, path, headers={"Authorization": "Bearer "}).status_code == 401
 
-    # Even the (previously) correct bearer token can't work when there's no secret to check against.
-    response = client.request(method, path, headers={"Authorization": "Bearer s3cr3t"})
-    assert response.status_code == 401
+
+@pytest.mark.parametrize("method,path", ADMIN_ROUTES)
+def test_unset_admin_secret_fails_closed_even_with_cron_secret_set(method, path, monkeypatch):
+    monkeypatch.setattr(Security, "CRON_SECRET", "cr0n")
+    monkeypatch.setattr(Security, "ADMIN_SECRET", None)
+    block_handlers(monkeypatch)
+    client = TestClient(app_module.app)
+    assert client.request(method, path, headers={"Authorization": "Bearer cr0n"}).status_code == 401

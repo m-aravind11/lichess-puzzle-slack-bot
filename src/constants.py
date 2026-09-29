@@ -6,10 +6,14 @@ class Paths:
     INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
     HOUSES_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'houses.html')
     LEADERBOARD_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'leaderboard.html')
+    HOLIDAYS_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'holidays.html')
 
 
 class Security:
+    # The Cloudflare cron's key - only the scheduled routes accept it.
     CRON_SECRET = os.environ.get('CRON_SECRET')
+    # People's key (admin pages, curl) - accepted by every admin route.
+    ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 
 
 class Validation:

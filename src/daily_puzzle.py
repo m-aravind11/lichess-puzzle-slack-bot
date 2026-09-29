@@ -242,6 +242,14 @@ class LichessDailyPuzzle:
             self._generate_and_send_puzzle(today)
             return
 
+        if db.is_holiday(date_str):
+            # A day off: nothing is posted, and since streaks run over posted
+            # puzzles rather than calendar days, nobody's streak breaks. Only the
+            # plain cron run checks this - force/newPuzzle above are manual, so
+            # an admin can still post on a holiday deliberately.
+            logger.info("%s is a holiday, skipping", date_str)
+            return
+
         if db.puzzle_sent_for_date(date_str):
             # Default idempotency guard: a retriggered cron with no flags must
             # not post a second, different puzzle for the same day.

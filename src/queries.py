@@ -207,3 +207,15 @@ class PlayerQueries:
     """
 
     UNASSIGN = "UPDATE player_houses SET active = 0 WHERE user_id = ? AND active = 1"
+
+
+class HolidayQueries:
+    # date is YYYY-MM-DD (UTC), the same day format as substr(posted_at, 1, 10).
+    LIST = "SELECT date FROM holidays ORDER BY date"
+
+    EXISTS = "SELECT 1 FROM holidays WHERE date = ?"
+
+    # Idempotent: re-adding a holiday is a no-op, so a range can be re-submitted.
+    INSERT = "INSERT INTO holidays (date, added_at) VALUES (?, ?) ON CONFLICT(date) DO NOTHING"
+
+    DELETE = "DELETE FROM holidays WHERE date = ?"

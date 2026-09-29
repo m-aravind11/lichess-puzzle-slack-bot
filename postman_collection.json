@@ -1,22 +1,23 @@
 {
   "info": {
     "name": "Lichess Puzzle Slack Bot - Admin",
-    "description": "Admin endpoints (see API.md). Set the `cronSecret` collection variable to your CRON_SECRET before sending anything; every request inherits bearer auth from the collection. Change `baseUrl` to http://localhost:8000 for local dev.",
+    "description": "Admin endpoints (see API.md). Set the `adminSecret` collection variable to your ADMIN_SECRET before sending anything; every request inherits bearer auth from the collection. Change `baseUrl` to http://localhost:8000 for local dev.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
     "type": "bearer",
     "bearer": [
-      { "key": "token", "value": "{{cronSecret}}", "type": "string" }
+      { "key": "token", "value": "{{adminSecret}}", "type": "string" }
     ]
   },
   "variable": [
     { "key": "baseUrl", "value": "https://lichess-puzzle-slack-bot.vercel.app", "type": "string" },
-    { "key": "cronSecret", "value": "", "type": "secret" },
+    { "key": "adminSecret", "value": "", "type": "secret" },
     { "key": "puzzleId", "value": "abc123", "type": "string" },
     { "key": "submissionId", "value": "1", "type": "string" },
     { "key": "houseId", "value": "1", "type": "string" },
-    { "key": "userId", "value": "U0123ABC", "type": "string" }
+    { "key": "userId", "value": "U0123ABC", "type": "string" },
+    { "key": "holidayDate", "value": "2026-12-25", "type": "string" }
   ],
   "item": [
     {
@@ -267,6 +268,47 @@
               "path": ["admin", "players", "{{userId}}", "house"]
             },
             "description": "For when a player leaves the company - soft-deletes the assignment. 200 unassigned, 404 player isn't in a house."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Holidays",
+      "item": [
+        {
+          "name": "List holidays",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/holidays",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "holidays"]
+            },
+            "description": "UTC dates no puzzle or leaderboard is posted, oldest first."
+          }
+        },
+        {
+          "name": "Add holiday",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{baseUrl}}/admin/holidays/{{holidayDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "holidays", "{{holidayDate}}"]
+            },
+            "description": "200 added (or already a holiday), 400 bad or past date."
+          }
+        },
+        {
+          "name": "Remove holiday",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/admin/holidays/{{holidayDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "holidays", "{{holidayDate}}"]
+            },
+            "description": "200 removed, 404 not a holiday."
           }
         }
       ]

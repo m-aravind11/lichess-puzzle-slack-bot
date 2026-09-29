@@ -40,7 +40,7 @@ def client(conn, monkeypatch):
         conn.commit()
 
     monkeypatch.setattr(db, "get_connection", fake_get_connection)
-    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    monkeypatch.setattr(Security, "ADMIN_SECRET", "s3cr3t")
     return TestClient(app_module.app)
 
 
