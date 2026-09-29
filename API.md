@@ -4,7 +4,8 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /`, `GET /houses` and `POST /webhooks/slack` requires:
+Every route below except `GET /`, `GET /leaderboard`, `GET /houses` and
+`POST /webhooks/slack` requires:
 
 ```
 Authorization: Bearer $CRON_SECRET
@@ -28,12 +29,15 @@ Serves the static `index.html`. No auth, no response body documented here.
 
 ---
 
-## `GET /houses`
+## `GET /leaderboard`, `GET /houses`
 
-Serves the house management page (`src/static/houses.html`). No auth - the
-page holds no data; it asks for `CRON_SECRET` and uses it to call the
-`/admin/houses` and `/admin/players` routes below. The secret is kept in the
-tab's `sessionStorage` only.
+Serve the web leaderboard (`src/static/leaderboard.html`) and the house
+management page (`src/static/houses.html`), both linked from `/`. No auth -
+the pages hold no data; they ask for `CRON_SECRET` and use it to call the
+admin routes below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`).
+The secret is kept in the tab's `sessionStorage`, shared by both pages, so
+unlocking one unlocks the other. Shared page code lives in
+`src/static/admin.js` / `admin.css`.
 
 ---
 
@@ -128,10 +132,36 @@ curl "https://.../admin/puzzles?state=queued" \
 
 ---
 
+## `GET /admin/leaderboard`
+
+The same standings `/admin/leaderboard:send` posts to Slack, as JSON - what
+the web leaderboard renders. Both come from `standings.build_standings()`;
+the Slack post and this route only lay it out differently, so they always
+agree.
+
+**Responses**
+
+- `200`:
+  - `players`: ranked array of `{rank, userName, house, points, correct,
+    attempted, avgSolveTime, currentStreak, bestStreak}`. `house` is `null`
+    if never assigned; `avgSolveTime` is pre-formatted (e.g. `1m 30s`, `-`).
+  - `houses`: ranked array of `{rank, name, points, correct, players}`
+  - `milestones`: `{streak, players}` for each streak milestone hit today,
+    longest first, with `players` as display names
+- `401`: bad/missing bearer token
+
+```
+curl "https://.../admin/leaderboard" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+---
+
 ## `POST /admin/leaderboard:send`
 
-Posts current standings to the Slack channel - the player table, streak
-milestones, then house standings (omitted while nobody is in a house).
+Posts current standings to the Slack channel - the player table (with each
+player's house), streak milestones, then house standings (omitted while
+nobody is in a house).
 No-ops (still `200`) if the leaderboard is empty (nobody has submitted
 anything yet).
 

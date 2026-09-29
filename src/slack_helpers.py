@@ -4,8 +4,6 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from constants import Streaks
-
 logger = logging.getLogger(__name__)
 
 
@@ -74,45 +72,35 @@ def _format_table(columns: list, rows: list) -> str:
     return "```\n" + "\n".join(table_lines) + "\n```"
 
 
-def format_leaderboard(board: list) -> str:
-    columns = ["#", "Name", "Points", "Solved", "Avg Solve Time", "Current Streak"]
+def format_leaderboard(standings: dict) -> str:
+    """The player table from standings.build_standings."""
+    columns = ["#", "Name", "House", "Points", "Solved", "Avg Solve Time", "Current Streak"]
     rows = [
         [
-            str(i + 1),
-            row["user_name"] or row["user_id"],
-            str(row["score"]),
-            f"{row['correct']}/{row['attempted']}",
-            format_seconds(row["avg_solve_seconds"]),
-            str(row["current_streak"]),
+            str(p["rank"]),
+            p["name"],
+            p["house"] or "-",
+            str(p["points"]),
+            f"{p['correct']}/{p['attempted']}",
+            format_seconds(p["avg_solve_seconds"]),
+            str(p["current_streak"]),
         ]
-        for i, row in enumerate(board)
+        for p in standings["players"]
     ]
     header = "*Leaderboard* _(ranked by points - faster solves score higher; ties broken by fastest average solve time)_"
     return f"{header}\n{_format_table(columns, rows)}"
 
 
-def format_house_leaderboard(board: list) -> str | None:
-    """Each house's total points - the sum of its players' - ranked, ties broken
-    by more correct answers. Players never assigned a house aren't counted;
-    ones who left the company still are. None when nobody on the board has a
-    house."""
-    houses = {}
-    for row in board:
-        if row["house_name"] is None:
-            continue
-        house = houses.setdefault(row["house_name"], {"score": 0, "correct": 0, "players": 0})
-        house["score"] += row["score"]
-        house["correct"] += row["correct"]
-        house["players"] += 1
-
-    if not houses:
+def format_house_leaderboard(standings: dict) -> str | None:
+    """The house standings from standings.build_standings. None when nobody on
+    the board has a house."""
+    if not standings["houses"]:
         return None
 
-    ranked = sorted(houses.items(), key=lambda item: (-item[1]["score"], -item[1]["correct"], item[0]))
     columns = ["#", "House", "Points", "Solved", "Players"]
     rows = [
-        [str(i + 1), name, str(house["score"]), str(house["correct"]), str(house["players"])]
-        for i, (name, house) in enumerate(ranked)
+        [str(h["rank"]), h["name"], str(h["points"]), str(h["correct"]), str(h["players"])]
+        for h in standings["houses"]
     ]
     return f"*House standings* _(sum of each house's players' points)_\n{_format_table(columns, rows)}"
 
@@ -121,22 +109,25 @@ def _join_names(names: list) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def format_streak_milestones(board: list) -> str | None:
+def format_streak_milestones(standings: dict) -> str | None:
     """One bullet per milestone reached, longest first, @-mentioning everyone on it.
     Kept separate from format_leaderboard's code block, where Slack would render
     <@U...> literally. None when nobody hit a milestone."""
-    by_milestone = {}
-    for row in board:
-        if row["current_streak"] in Streaks.MILESTONES:
-            by_milestone.setdefault(row["current_streak"], []).append(f"<@{row['user_id']}>")
-
-    if not by_milestone:
+    if not standings["milestones"]:
         return None
 
     lines = ["*Streak milestones*"]
-    for days in sorted(by_milestone, reverse=True):
-        mentions = by_milestone[days]
+    for milestone in standings["milestones"]:
+        mentions = [f"<@{p['user_id']}>" for p in milestone["players"]]
         verb = "is" if len(mentions) == 1 else "are"
         # Slack mrkdwn has no list syntax, so bullets are a literal character.
-        lines.append(f"• {_join_names(mentions)} {verb} on a {days}-day streak.")
+        lines.append(f"• {_join_names(mentions)} {verb} on a {milestone['streak']}-day streak.")
     return "\n".join(lines)
+
+
+def format_leaderboard_post(standings: dict) -> str:
+    """The whole leaderboard post: player table, streak milestones, then house
+    standings. Blank line between sections, so the milestone mentions read as a
+    separate paragraph rather than trailing off a code block."""
+    sections = [format_leaderboard(standings), format_streak_milestones(standings), format_house_leaderboard(standings)]
+    return "\n\n".join(section for section in sections if section)

@@ -14,6 +14,7 @@ import db
 import migrations
 from constants import Security
 from slack_helpers import format_house_leaderboard
+from standings import build_standings
 
 AUTH = {"Authorization": "Bearer s3cr3t"}
 
@@ -226,7 +227,10 @@ def test_leaderboard_entries_carry_house_name(client, conn):
 
 
 def _entry(user_id, house_name, score, correct):
-    return {"user_id": user_id, "house_name": house_name, "score": score, "correct": correct}
+    return {
+        "user_id": user_id, "user_name": user_id.lower(), "house_name": house_name, "score": score,
+        "correct": correct, "attempted": correct, "avg_solve_seconds": 60, "current_streak": 0, "best_streak": 0,
+    }
 
 
 def test_house_standings_sum_players_and_skip_unassigned():
@@ -236,21 +240,32 @@ def test_house_standings_sum_players_and_skip_unassigned():
         _entry("U3", "Gryffindor", 15, 2),
         _entry("U4", None, 100, 10),
     ]
-    lines = format_house_leaderboard(board).splitlines()
+    assert build_standings(board)["houses"] == [
+        {"rank": 1, "name": "Gryffindor", "points": 35, "correct": 4, "players": 2},
+        {"rank": 2, "name": "Slytherin", "points": 30, "correct": 3, "players": 1},
+    ]
+
+
+def test_house_standings_tie_broken_by_more_correct():
+    board = [_entry("U1", "Slytherin", 30, 2), _entry("U2", "Gryffindor", 30, 3)]
+    assert [h["name"] for h in build_standings(board)["houses"]] == ["Gryffindor", "Slytherin"]
+
+
+def test_house_standings_are_empty_when_nobody_is_in_a_house():
+    assert build_standings([_entry("U1", None, 10, 1)])["houses"] == []
+
+
+def test_slack_house_standings_table():
+    board = [_entry("U1", "Slytherin", 30, 3), _entry("U2", "Gryffindor", 20, 2), _entry("U3", "Gryffindor", 15, 2)]
+    lines = format_house_leaderboard(build_standings(board)).splitlines()
     assert lines[0].startswith("*House standings*")
     assert lines[4].split() == ["1", "Gryffindor", "35", "4", "2"]
     assert lines[5].split() == ["2", "Slytherin", "30", "3", "1"]
     assert len(lines) == 7  # header, ```, column row, divider, 2 houses, ```
 
 
-def test_house_standings_tie_broken_by_more_correct():
-    board = [_entry("U1", "Slytherin", 30, 2), _entry("U2", "Gryffindor", 30, 3)]
-    lines = format_house_leaderboard(board).splitlines()
-    assert lines[4].split()[1] == "Gryffindor"
-
-
-def test_house_standings_are_omitted_when_nobody_is_in_a_house():
-    assert format_house_leaderboard([_entry("U1", None, 10, 1)]) is None
+def test_slack_house_standings_are_omitted_when_nobody_is_in_a_house():
+    assert format_house_leaderboard(build_standings([_entry("U1", None, 10, 1)])) is None
 
 
 def test_posted_leaderboard_includes_house_standings(client, conn, monkeypatch):
@@ -262,7 +277,7 @@ def test_posted_leaderboard_includes_house_standings(client, conn, monkeypatch):
 
     assert client.post("/admin/leaderboard:send", headers=AUTH).status_code == 200
     text = post.call_args.kwargs["text"]
-    assert text.endswith(format_house_leaderboard(db.get_leaderboard()))
+    assert text.endswith(format_house_leaderboard(build_standings(db.get_leaderboard())))
 
 
 # ---- page ----

@@ -19,7 +19,11 @@ there's a points-based leaderboard.
    it checks the moves against the solution, scores it, records the
    submission, and DMs the result. A correct answer also gets a "solved it in
    M:SS (+N pts)" reply posted in the puzzle's thread.
-3. `/admin/leaderboard:send` posts current standings to the channel.
+3. `/admin/leaderboard:send` posts current standings to the channel. The
+   same standings are on the web at `/leaderboard` (linked from `/`, needs
+   `CRON_SECRET`). `standings.build_standings()` computes them once; the Slack
+   post (`slack_helpers.format_leaderboard_post`) and the web page only
+   render it.
 
 See [API.md](API.md) for the full HTTP API (routes, auth, params, responses).
 

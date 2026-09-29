@@ -14,7 +14,8 @@ import app as app_module
 import db
 import migrations
 from constants import Security, Streaks
-from slack_helpers import format_leaderboard, format_streak_milestones
+from slack_helpers import format_leaderboard, format_leaderboard_post, format_streak_milestones
+from standings import build_standings
 
 
 @pytest.fixture
@@ -246,15 +247,28 @@ def _entry(user_id, current_streak):
     }
 
 
+def milestones(board):
+    return build_standings(board)["milestones"]
+
+
+def slack_milestones(board):
+    return format_streak_milestones(build_standings(board))
+
+
+def table_lines(board):
+    """The player table's lines, from inside its code block."""
+    return format_leaderboard(build_standings(board)).split("```")[1].strip("\n").splitlines()
+
+
 def test_leaderboard_is_only_the_header_and_table():
-    text = format_leaderboard([_entry("U1", 7)])
+    text = format_leaderboard(build_standings([_entry("U1", 7)]))
     assert "Current Streak" in text
     assert text.endswith("```")
     assert "<@" not in text
 
 
 def test_milestones_are_listed_longest_first():
-    assert format_streak_milestones([_entry("U1", 3), _entry("U2", 4), _entry("U3", 7)]).splitlines() == [
+    assert slack_milestones([_entry("U1", 3), _entry("U2", 4), _entry("U3", 7)]).splitlines() == [
         "*Streak milestones*",
         "• <@U3> is on a 7-day streak.",
         "• <@U1> is on a 3-day streak.",
@@ -262,37 +276,46 @@ def test_milestones_are_listed_longest_first():
 
 
 def test_players_on_the_same_milestone_share_a_line():
-    text = format_streak_milestones([_entry("U1", 7), _entry("U2", 7), _entry("U3", 7)])
+    text = slack_milestones([_entry("U1", 7), _entry("U2", 7), _entry("U3", 7)])
     assert text.endswith("• <@U1>, <@U2> and <@U3> are on a 7-day streak.")
 
 
 def test_two_players_on_a_milestone_are_joined_with_and():
-    text = format_streak_milestones([_entry("U1", 30), _entry("U2", 30)])
+    text = slack_milestones([_entry("U1", 30), _entry("U2", 30)])
     assert text.endswith("• <@U1> and <@U2> are on a 30-day streak.")
 
 
 @pytest.mark.parametrize("streak", Streaks.MILESTONES)
 def test_every_milestone_is_announced(streak):
-    assert format_streak_milestones([_entry("U1", streak)]).endswith(f"• <@U1> is on a {streak}-day streak.")
+    assert slack_milestones([_entry("U1", streak)]).endswith(f"• <@U1> is on a {streak}-day streak.")
 
 
 @pytest.mark.parametrize("streak", [0, 1, 2, 4, 5, 10, 25, 364, 366, 730])
 def test_non_milestones_are_not_announced(streak):
-    assert format_streak_milestones([_entry("U1", streak)]) is None
+    assert milestones([_entry("U1", streak)]) == []
+    assert slack_milestones([_entry("U1", streak)]) is None
+
+
+def test_milestones_carry_names_for_the_web_and_ids_for_slack_mentions():
+    assert milestones([_entry("U1", 7)]) == [{"streak": 7, "players": [{"user_id": "U1", "name": "u1"}]}]
 
 
 def test_table_falls_back_to_user_id_when_name_missing():
     entry = _entry("U1", 0)
     entry["user_name"] = None
-    assert "U1" in format_leaderboard([entry]).split("```")[1]
+    assert table_lines([entry])[2].split()[1] == "U1"
 
 
-def test_solved_column_shows_correct_over_attempted():
+def test_table_columns_include_house():
     entry = _entry("U1", 0)
-    entry.update(correct=9, attempted=12)
-    header, _, row = format_leaderboard([entry]).split("```")[1].strip().splitlines()
-    assert header.split() == ["#", "Name", "Points", "Solved", "Avg", "Solve", "Time", "Current", "Streak"]
-    assert row.split()[3] == "9/12"
+    entry.update(correct=9, attempted=12, house_name="Airbenders")
+    header, _, row = table_lines([entry])
+    assert header.split() == ["#", "Name", "House", "Points", "Solved", "Avg", "Solve", "Time", "Current", "Streak"]
+    assert row.split()[2:5] == ["Airbenders", "10", "9/12"]
+
+
+def test_table_shows_a_dash_for_players_without_a_house():
+    assert table_lines([_entry("U1", 0)])[2].split()[2] == "-"
 
 
 @pytest.fixture
@@ -314,10 +337,15 @@ def post_leaderboard(monkeypatch):
 
 
 def test_posted_leaderboard_separates_milestones_with_a_blank_line(post_leaderboard):
-    board = [_entry("U1", 7)]
-    assert post_leaderboard(board) == f"{format_leaderboard(board)}\n\n{format_streak_milestones(board)}"
+    standings = build_standings([_entry("U1", 7)])
+    assert post_leaderboard([_entry("U1", 7)]) == f"{format_leaderboard(standings)}\n\n{format_streak_milestones(standings)}"
 
 
 def test_posted_leaderboard_without_milestones_is_just_the_table(post_leaderboard):
-    board = [_entry("U1", 2)]
-    assert post_leaderboard(board) == format_leaderboard(board)
+    assert post_leaderboard([_entry("U1", 2)]) == format_leaderboard(build_standings([_entry("U1", 2)]))
+
+
+def test_posted_leaderboard_is_the_formatted_post(post_leaderboard):
+    entry = _entry("U1", 7)
+    entry["house_name"] = "Airbenders"
+    assert post_leaderboard([entry]) == format_leaderboard_post(build_standings([entry]))

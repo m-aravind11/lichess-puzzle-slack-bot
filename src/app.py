@@ -16,7 +16,8 @@ import db
 from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import format_house_leaderboard, format_leaderboard, format_solution_reveal, format_streak_milestones
+from slack_helpers import format_leaderboard_post, format_seconds, format_solution_reveal
+from standings import build_standings
 from slack_verify import verify_slack_request
 
 # One id per incoming request, auto-injected into every log line (including ones
@@ -63,11 +64,15 @@ def require_admin_auth(request: Request) -> None:
 async def root():
     return FileResponse(Paths.INDEX_HTML_PATH)
 
-# The page itself is public - it holds no data, and every call it makes goes
+# These pages are public - they hold no data, and every call they make goes
 # through the admin routes below, with the secret the user types in.
 @app.get('/houses')
 async def houses_page():
     return FileResponse(Paths.HOUSES_HTML_PATH)
+
+@app.get('/leaderboard')
+async def leaderboard_page():
+    return FileResponse(Paths.LEADERBOARD_HTML_PATH)
 
 @app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_admin_auth)])
 async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
@@ -197,12 +202,9 @@ async def send_leaderboard():
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
-        # Blank line between sections, so the milestone mentions read as a separate
-        # paragraph rather than trailing off a code block.
-        sections = [format_leaderboard(board), format_streak_milestones(board), format_house_leaderboard(board)]
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
-            text="\n\n".join(section for section in sections if section),
+            text=format_leaderboard_post(build_standings(board)),
         )
     except Exception:
         logger.exception("admin/leaderboard:send failed")
@@ -258,3 +260,29 @@ async def unassign_player_house(user_id: str):
     if not db.unassign_player_house(user_id):
         raise HTTPException(status_code=404, detail="Player isn't in a house")
     return Response(status_code=200)
+
+@app.get('/admin/leaderboard', dependencies=[Depends(require_admin_auth)])
+async def get_leaderboard():
+    """The same standings /admin/leaderboard:send posts to Slack, as JSON."""
+    standings = build_standings(db.get_leaderboard())
+    return {
+        "players": [
+            {
+                "rank": p["rank"],
+                "userName": p["name"],
+                "house": p["house"],
+                "points": p["points"],
+                "correct": p["correct"],
+                "attempted": p["attempted"],
+                "avgSolveTime": format_seconds(p["avg_solve_seconds"]),
+                "currentStreak": p["current_streak"],
+                "bestStreak": p["best_streak"],
+            }
+            for p in standings["players"]
+        ],
+        "houses": standings["houses"],
+        "milestones": [
+            {"streak": m["streak"], "players": [p["name"] for p in m["players"]]}
+            for m in standings["milestones"]
+        ],
+    }
