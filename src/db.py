@@ -10,8 +10,8 @@ from datetime import datetime, timezone
 import turso_serverless
 
 import migrations
-from constants import PuzzleResult, PuzzleSource, PuzzleState, SubmissionResult
-from queries import LeaderboardQueries, PuzzleQueries, SubmissionQueries
+from constants import PlayerHouseResult, PuzzleResult, PuzzleSource, PuzzleState, SubmissionResult
+from queries import HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
 
 logger = logging.getLogger(__name__)
 
@@ -333,7 +333,9 @@ def get_leaderboard() -> list:
     scoring.compute_score - faster correct answers score higher), breaking ties
     by fastest average solve time (time from puzzle post to submission, over
     correct answers only). Each entry also carries current_streak and
-    best_streak (see LeaderboardQueries.STREAKS)."""
+    best_streak (see LeaderboardQueries.STREAKS), and house_name (None if the
+    player was never assigned a house - one who left the company keeps theirs,
+    so their points still count for it)."""
     with get_connection() as conn:
         cur = conn.cursor()
 
@@ -353,7 +355,11 @@ def get_leaderboard() -> list:
         cur.execute(LeaderboardQueries.STREAKS)
         streaks = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
 
+        cur.execute(LeaderboardQueries.HOUSE_MEMBERS)
+        houses = dict(cur.fetchall())
+
     for user_id, entry in board.items():
+        entry["house_name"] = houses.get(user_id)
         times = solve_times.get(user_id)
         entry["avg_solve_seconds"] = sum(times) / len(times) if times else None
         streak = streaks.get(user_id)
@@ -364,3 +370,75 @@ def get_leaderboard() -> list:
         board.values(),
         key=lambda r: (-r["score"], -r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
     )
+
+
+@_retry_stale_connection
+def list_houses() -> list:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(HouseQueries.LIST)
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
+@_retry_stale_connection
+def create_house(name: str) -> int | None:
+    """Returns the new house's id, or None if the name is already taken."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(HouseQueries.INSERT, (name,))
+        row = cur.fetchone()
+        if row is None:
+            logger.info("create_house: %r already exists, no-op", name)
+            return None
+        logger.info("create_house: created %r (id=%s)", name, row[0])
+        return row[0]
+
+
+@_retry_stale_connection
+def list_players() -> list:
+    """Everyone with an active submission, with their house_id (None if unassigned)."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(PlayerQueries.LIST)
+        return [_row_to_dict(cur, row) for row in cur.fetchall()]
+
+
+@_retry_stale_connection
+def assign_player_house(user_id: str, house_id: int) -> str:
+    """Puts an unassigned player in a house. A player's house is fixed once
+    assigned, so this never switches it - unassign_player_house is only for
+    someone leaving the company. Re-assigning the house they're already in is a no-op success. Returns one of PlayerHouseResult.ASSIGNED, .PLAYER_NOT_FOUND (no
+    active submissions), .HOUSE_NOT_FOUND, or .ALREADY_ASSIGNED (to a different
+    house)."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(PlayerQueries.EXISTS, (user_id,))
+        if cur.fetchone() is None:
+            return PlayerHouseResult.PLAYER_NOT_FOUND
+
+        cur.execute(HouseQueries.EXISTS, (house_id,))
+        if cur.fetchone() is None:
+            return PlayerHouseResult.HOUSE_NOT_FOUND
+
+        cur.execute(PlayerQueries.ASSIGN, (user_id, house_id, _now()))
+        if cur.rowcount > 0:
+            logger.info("assign_player_house: user=%s -> house=%s", user_id, house_id)
+            return PlayerHouseResult.ASSIGNED
+
+        cur.execute(PlayerQueries.GET_HOUSE, (user_id,))
+        current = cur.fetchone()[0]
+        result = PlayerHouseResult.ASSIGNED if current == house_id else PlayerHouseResult.ALREADY_ASSIGNED
+        logger.info("assign_player_house: user=%s already in house=%s, asked for %s -> %s", user_id, current, house_id, result)
+        return result
+
+
+@_retry_stale_connection
+def unassign_player_house(user_id: str) -> bool:
+    """Soft-deletes a player's house assignment when they leave the company.
+    Returns True if they had one."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(PlayerQueries.UNASSIGN, (user_id,))
+        unassigned = cur.rowcount > 0
+        logger.info("unassign_player_house: user=%s -> %s", user_id, "unassigned" if unassigned else "not assigned")
+        return unassigned

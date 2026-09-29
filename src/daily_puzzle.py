@@ -150,7 +150,7 @@ class LichessDailyPuzzle:
                             "text": (
                                 f"<!channel> *Puzzle for the day ({date_str})*\n"
                                 f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`\n\n"
-                                f"Click *Submit Answer* below and enter only your own moves, e.g. `Nf3 Bb5` "
+                                f"Click *Submit Answer* below and *ENTER YOUR OWN MOVES ONLY*, e.g. `Nf3 Bb5` "
                                 f"(your opponent's replies are added automatically). You'll get the result by DM."
                             ),
                         },

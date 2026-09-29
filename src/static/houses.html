@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Houses - Lichess Puzzle Bot</title>
+<style>
+  :root {
+    --bg: #f2f1ec;
+    --bg-2: #e8e6db;
+    --surface: #ffffff;
+    --surface-2: #eef0f4;
+    --fg: #1c1c1a;
+    --muted: #656356;
+    --border: #ddd9cd;
+    --accent: #3d5a80;
+    --accent-strong: #293f5c;
+    --accent-soft: #e2e8f0;
+    --warn: #9a5b13;
+    --warn-soft: #f6ead8;
+    --danger: #a23b2c;
+    --ok: #2f6b45;
+    --shadow: 0 1px 2px rgba(30, 25, 10, 0.05), 0 10px 28px rgba(30, 25, 10, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --bg-2: #191c21;
+      --surface: #1d2026;
+      --surface-2: #1a1e26;
+      --fg: #edeee8;
+      --muted: #9a9c9e;
+      --border: #33373f;
+      --accent: #7c9ac0;
+      --accent-strong: #a3bedb;
+      --accent-soft: #232c38;
+      --warn: #e0a55a;
+      --warn-soft: #33291c;
+      --danger: #e5806f;
+      --ok: #7cc193;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse 900px 500px at 50% -10%, var(--bg-2), var(--bg));
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 48px 20px 60px;
+    min-height: 100vh;
+  }
+  main { max-width: 680px; margin: 0 auto; }
+  [hidden] { display: none !important; }
+
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.02em; font-weight: 750; }
+  .sub { color: var(--muted); margin: 0 0 32px; line-height: 1.5; }
+
+  h2.eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  section { margin-bottom: 36px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+
+  input, select, button { font: inherit; color: inherit; }
+  input[type="text"], input[type="password"], input[type="search"], select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    min-width: 0;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  button {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 8px 14px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-primary { background: var(--accent); color: var(--surface); }
+  .btn-primary:hover { background: var(--accent-strong); }
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--muted); padding: 5px 10px; font-size: 0.85rem; }
+  .btn-ghost:hover { color: var(--fg); background: var(--accent-soft); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  /* ---- unlock ---- */
+  .unlock { padding: 22px; }
+  .unlock p { margin: 0 0 14px; color: var(--muted); line-height: 1.5; }
+  .row { display: flex; gap: 8px; }
+  .row > input { flex: 1; }
+
+  /* ---- houses ---- */
+  .house-list { list-style: none; margin: 0; padding: 0; }
+  .house {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .house:last-child { border-bottom: none; }
+  .house-name { flex: 1; font-weight: 600; overflow-wrap: anywhere; }
+  .count { color: var(--muted); font-size: 0.85rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .add-house { padding: 12px 16px; border-top: 1px solid var(--border); }
+  .empty { padding: 16px; color: var(--muted); margin: 0; }
+
+  /* ---- players ---- */
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input { flex: 1; min-width: 180px; }
+  .summary { color: var(--muted); font-size: 0.85rem; }
+  .summary strong { color: var(--warn); }
+  .player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .player:last-child { border-bottom: none; }
+  .who { flex: 1; min-width: 0; }
+  .who .name { font-weight: 600; overflow-wrap: anywhere; }
+  .who .uid { color: var(--muted); font-size: 0.78rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .player select { width: 190px; flex-shrink: 0; }
+  .player.unassigned select { border-color: var(--warn); background: var(--warn-soft); }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .badge.warn { color: var(--warn); background: var(--warn-soft); }
+  .house-tag {
+    width: 110px;
+    flex-shrink: 0;
+    padding: 8px 10px;
+    font-weight: 600;
+    color: var(--accent-strong);
+  }
+
+  /* ---- toast ---- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    background: var(--fg);
+    color: var(--bg);
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    box-shadow: var(--shadow);
+    max-width: calc(100vw - 32px);
+    z-index: 10;
+  }
+  .toast.error { background: var(--danger); color: #fff; }
+
+  @media (max-width: 520px) {
+    body { padding: 28px 16px 48px; }
+    .player { flex-wrap: wrap; }
+    .player select { width: 100%; }
+    .house-tag { width: auto; flex: 1; padding-left: 0; }
+    .house { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Houses</h1>
+  <p class="sub">Put players in houses for the house standings. A player's house is fixed once assigned. Unassign a player only when they leave the company.</p>
+
+  <section id="unlockSection">
+    <form class="card unlock" id="unlockForm">
+      <p>Enter the admin secret (<code>CRON_SECRET</code>). It's kept only for this browser tab.</p>
+      <div class="row">
+        <input type="password" id="secret" placeholder="Admin secret" autocomplete="current-password" required>
+        <button class="btn-primary" type="submit">Unlock</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <section>
+      <h2 class="eyebrow">Houses</h2>
+      <div class="card">
+        <ul class="house-list" id="houseList"></ul>
+        <form class="add-house row" id="addHouseForm">
+          <input type="text" id="newHouse" placeholder="New house name" maxlength="60" required>
+          <button class="btn-primary" type="submit">Add</button>
+        </form>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="eyebrow">Players</h2>
+      <div class="toolbar">
+        <input type="search" id="filter" placeholder="Filter players">
+        <span class="summary" id="summary"></span>
+      </div>
+      <div class="card" id="playerList"></div>
+    </section>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+  (function () {
+    var STORAGE_KEY = 'housesAdminSecret';
+    var state = { houses: [], players: [] };
+
+    function readSecret() {
+      try { return sessionStorage.getItem(STORAGE_KEY); } catch (e) { return null; }
+    }
+    function writeSecret(value) {
+      try {
+        if (value) sessionStorage.setItem(STORAGE_KEY, value);
+        else sessionStorage.removeItem(STORAGE_KEY);
+      } catch (e) { /* storage unavailable - secret lives in memory only */ }
+    }
+    var secret = readSecret();
+
+    var toastTimer;
+    function toast(message, isError) {
+      var el = document.getElementById('toast');
+      el.textContent = message;
+      el.classList.toggle('error', !!isError);
+      el.hidden = false;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { el.hidden = true; }, isError ? 5000 : 2200);
+    }
+
+    function api(method, path, body) {
+      var opts = { method: method, headers: { 'Authorization': 'Bearer ' + secret } };
+      if (body !== undefined) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      return fetch(path, opts).then(function (res) {
+        if (res.status === 401) {
+          lock();
+          throw new Error('Wrong admin secret.');
+        }
+        return res.json().catch(function () { return null; }).then(function (data) {
+          if (!res.ok) throw new Error((data && data.detail) || ('Request failed (' + res.status + ')'));
+          return data;
+        });
+      });
+    }
+
+    function lock() {
+      secret = null;
+      writeSecret(null);
+      document.getElementById('app').hidden = true;
+      document.getElementById('unlockSection').hidden = false;
+    }
+
+    function load() {
+      return Promise.all([api('GET', '/admin/houses'), api('GET', '/admin/players')]).then(function (results) {
+        state.houses = results[0];
+        state.players = results[1];
+        document.getElementById('unlockSection').hidden = true;
+        document.getElementById('app').hidden = false;
+        render();
+      });
+    }
+
+    function el(tag, className, text) {
+      var node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function memberCounts() {
+      var counts = {};
+      state.players.forEach(function (p) {
+        if (p.houseId !== null) counts[p.houseId] = (counts[p.houseId] || 0) + 1;
+      });
+      return counts;
+    }
+
+    function renderHouses() {
+      var list = document.getElementById('houseList');
+      list.textContent = '';
+      if (!state.houses.length) {
+        list.appendChild(el('li', 'empty', 'No houses yet - add the first one below.'));
+        return;
+      }
+      var counts = memberCounts();
+      state.houses.forEach(function (house) {
+        var li = el('li', 'house');
+        var name = el('div', 'house-name', house.name);
+        var n = counts[house.id] || 0;
+        var count = el('span', 'count', n + (n === 1 ? ' player' : ' players'));
+        li.appendChild(name);
+        li.appendChild(count);
+        list.appendChild(li);
+      });
+    }
+
+    function renderPlayers() {
+      var container = document.getElementById('playerList');
+      container.textContent = '';
+      var query = document.getElementById('filter').value.trim().toLowerCase();
+      var unassigned = state.players.filter(function (p) { return p.houseId === null; }).length;
+
+      var summary = document.getElementById('summary');
+      summary.textContent = '';
+      summary.appendChild(document.createTextNode(state.players.length + ' players'));
+      if (unassigned) {
+        summary.appendChild(document.createTextNode(' · '));
+        summary.appendChild(el('strong', null, unassigned + ' not assigned'));
+      }
+
+      var shown = state.players.filter(function (p) {
+        return !query || (p.userName || '').toLowerCase().indexOf(query) !== -1 || p.userId.toLowerCase().indexOf(query) !== -1;
+      });
+      if (!shown.length) {
+        container.appendChild(el('p', 'empty', state.players.length ? 'No players match.' : 'No players yet - they appear here after their first answer.'));
+        return;
+      }
+
+      shown.forEach(function (player) {
+        var row = el('div', 'player' + (player.houseId === null ? ' unassigned' : ''));
+        var who = el('div', 'who');
+        who.appendChild(el('div', 'name', player.userName || player.userId));
+        who.appendChild(el('div', 'uid', player.userId));
+        row.appendChild(who);
+
+        if (player.houseId !== null) {
+          var house = state.houses.find(function (h) { return h.id === player.houseId; });
+          row.appendChild(el('div', 'house-tag', house ? house.name : '?'));
+          var unassignBtn = el('button', 'btn-ghost', 'Unassign');
+          unassignBtn.type = 'button';
+          unassignBtn.addEventListener('click', function () { unassign(player, house, unassignBtn); });
+          row.appendChild(unassignBtn);
+          container.appendChild(row);
+          return;
+        }
+
+        row.appendChild(el('span', 'badge warn', 'Not assigned'));
+        var select = el('select');
+        select.setAttribute('aria-label', 'House for ' + (player.userName || player.userId));
+        var none = el('option', null, 'Choose house…');
+        none.value = '';
+        select.appendChild(none);
+        state.houses.forEach(function (house) {
+          var opt = el('option', null, house.name);
+          opt.value = String(house.id);
+          select.appendChild(opt);
+        });
+        select.addEventListener('change', function () { assign(player, select); });
+        row.appendChild(select);
+
+        container.appendChild(row);
+      });
+    }
+
+    function assign(player, select) {
+      var houseId = parseInt(select.value, 10);
+      var house = state.houses.find(function (h) { return h.id === houseId; });
+      var who = player.userName || player.userId;
+      if (!house || !confirm('Put ' + who + ' in ' + house.name + '? Houses are fixed once assigned.')) {
+        select.value = '';
+        return;
+      }
+      select.disabled = true;
+      api('PUT', '/admin/players/' + encodeURIComponent(player.userId) + '/house', { houseId: houseId }).then(function () {
+        player.houseId = houseId;
+        toast(who + ' → ' + house.name);
+        render();
+      }).catch(function (err) {
+        toast(err.message, true);
+        // Most likely assigned from somewhere else in the meantime - show the real state.
+        load().catch(function () {});
+      });
+    }
+
+    function unassign(player, house, button) {
+      var who = player.userName || player.userId;
+      if (!confirm('Take ' + who + ' out of ' + (house ? house.name : 'their house') + '?\n\nOnly do this when they leave the company.')) return;
+      button.disabled = true;
+      api('DELETE', '/admin/players/' + encodeURIComponent(player.userId) + '/house').then(function () {
+        toast(who + ' unassigned');
+        return load();
+      }).catch(function (err) {
+        toast(err.message, true);
+        load().catch(function () {});
+      });
+    }
+
+    function render() {
+      renderHouses();
+      renderPlayers();
+    }
+
+    document.getElementById('unlockForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      secret = document.getElementById('secret').value;
+      load().then(function () {
+        writeSecret(secret);
+        document.getElementById('secret').value = '';
+      }).catch(function (err) { toast(err.message, true); });
+    });
+
+    document.getElementById('addHouseForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = document.getElementById('newHouse');
+      var name = input.value.trim();
+      if (!name) return;
+      api('POST', '/admin/houses', { name: name }).then(function () {
+        input.value = '';
+        toast('Added ' + name);
+        return load();
+      }).catch(function (err) { toast(err.message, true); });
+    });
+
+    document.getElementById('filter').addEventListener('input', renderPlayers);
+
+    if (secret) {
+      load().catch(function (err) { toast(err.message, true); });
+    }
+  })();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /` and `POST /webhooks/slack` requires:
+Every route below except `GET /`, `GET /houses` and `POST /webhooks/slack` requires:
 
 ```
 Authorization: Bearer $CRON_SECRET
@@ -25,6 +25,15 @@ user opens the answer modal or submits it.
 ## `GET /`
 
 Serves the static `index.html`. No auth, no response body documented here.
+
+---
+
+## `GET /houses`
+
+Serves the house management page (`src/static/houses.html`). No auth - the
+page holds no data; it asks for `CRON_SECRET` and uses it to call the
+`/admin/houses` and `/admin/players` routes below. The secret is kept in the
+tab's `sessionStorage` only.
 
 ---
 
@@ -121,8 +130,10 @@ curl "https://.../admin/puzzles?state=queued" \
 
 ## `POST /admin/leaderboard:send`
 
-Posts current standings to the Slack channel. No-ops (still `200`) if the
-leaderboard is empty (nobody has submitted anything yet).
+Posts current standings to the Slack channel - the player table, streak
+milestones, then house standings (omitted while nobody is in a house).
+No-ops (still `200`) if the leaderboard is empty (nobody has submitted
+anything yet).
 
 **Responses**
 
@@ -219,6 +230,106 @@ Reverses a soft-delete from `DELETE /admin/puzzles/{puzzle_id}`.
 
 ```
 curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+---
+
+## `GET /admin/houses`
+
+Lists houses, alphabetically.
+
+**Responses**
+
+- `200`: array of `{id, name, memberCount}`
+- `401`: bad/missing bearer token
+
+```
+curl "https://.../admin/houses" \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+---
+
+## `POST /admin/houses`
+
+Creates a house. Names are unique, ignoring case. Houses can't be renamed
+or deleted.
+
+**Body**
+
+- `name` (string, required): trimmed
+
+**Responses**
+
+- `201`: `{id, name}`
+- `400`: missing/blank `name`
+- `401`: bad/missing bearer token
+- `409`: a house with that name already exists
+
+```
+curl -X POST "https://.../admin/houses" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Gryffindor"}'
+```
+
+---
+
+## `GET /admin/players`
+
+Lists everyone with an active submission, unassigned players first.
+
+**Responses**
+
+- `200`: array of `{userId, userName, houseId}`; `houseId` is `null` when
+  not assigned
+- `401`: bad/missing bearer token
+
+---
+
+## `PUT /admin/players/{user_id}/house`
+
+Puts an unassigned player in a house. A player's house is fixed once
+assigned, so this refuses to switch it. Setting the house they're already in is a
+no-op `200`.
+
+**Body**
+
+- `houseId` (integer, required)
+
+**Responses**
+
+- `200`: `{userId, houseId}`
+- `400`: missing `houseId`, or not an integer
+- `401`: bad/missing bearer token
+- `404`: no player with that id (no active submissions), or no such house
+- `409`: player is already in a different house
+
+```
+curl -X PUT "https://.../admin/players/U0123ABC/house" \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"houseId": 1}'
+```
+
+---
+
+## `DELETE /admin/players/{user_id}/house`
+
+Takes a player out of their house when they leave the company. Soft-delete:
+the assignment row is kept with `active = 0`, and the player shows as not
+assigned. Their points still count toward the house in the leaderboard's
+house standings.
+
+**Responses**
+
+- `200`: unassigned
+- `401`: bad/missing bearer token
+- `404`: player isn't in a house
+
+```
+curl -X DELETE "https://.../admin/players/U0123ABC/house" \
   -H "Authorization: Bearer $CRON_SECRET"
 ```
 

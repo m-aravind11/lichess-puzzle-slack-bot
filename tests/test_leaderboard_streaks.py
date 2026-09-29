@@ -242,6 +242,7 @@ def _entry(user_id, current_streak):
     return {
         "user_id": user_id, "user_name": user_id.lower(), "score": 10, "correct": 1, "incorrect": 0,
         "attempted": 1, "avg_solve_seconds": 60, "current_streak": current_streak, "best_streak": current_streak,
+        "house_name": None,
     }
 
 
