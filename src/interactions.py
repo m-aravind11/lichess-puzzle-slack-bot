@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 def open_answer_modal(slack_client: WebClient, trigger_id: str, puzzle_id: str) -> None:
-    # move_count is player plies (solution[0::2]), the standard chess sense of
-    # "mate in N" - tells the user directly where their line ends.
     puzzle = db.get_puzzle(puzzle_id)
     move_count = len(puzzle['solution'][0::2]) if puzzle else None
     label = f"Your moves ({move_count}-move puzzle)" if move_count is not None else "Your moves"
@@ -84,9 +82,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
         elapsed_seconds = (datetime.now(timezone.utc) - posted_at).total_seconds()
     score = compute_score(correct, elapsed_seconds)
 
-    # No separate has_submitted()/is_open() pre-checks - record_submission() does
-    # both the open-puzzle check and the duplicate check as part of the same insert,
-    # since every extra round trip here eats into Slack's 3-second interaction budget.
+    # No separate open/duplicate pre-checks: Slack gives interactions ONLY 3 seconds.
     result = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 

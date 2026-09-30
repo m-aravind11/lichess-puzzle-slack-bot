@@ -1,7 +1,3 @@
-"""Houses run end to end - HTTP route -> db -> SQL - against a real in-memory
-sqlite3 connection, since one-active-house-per-player, soft deletes and name
-uniqueness live in the queries and indexes themselves."""
-
 import sqlite3
 from contextlib import contextmanager
 from unittest.mock import MagicMock
@@ -72,8 +68,6 @@ def player(client, user_id):
     return next(p for p in client.get("/admin/players", headers=AUTH).json() if p["userId"] == user_id)
 
 
-# ---- houses ----
-
 def test_created_house_is_listed_with_no_members(client):
     house_id = create(client, "  Gryffindor  ")
     assert client.get("/admin/houses", headers=AUTH).json() == [{"id": house_id, "name": "Gryffindor", "memberCount": 0}]
@@ -109,8 +103,6 @@ def test_houses_cannot_be_updated_or_deleted(client, method):
     assert client.request(method, f"/admin/houses/{house_id}", json={"name": "X"}, headers=AUTH).status_code == 404
     assert client.get("/admin/houses", headers=AUTH).json() == [{"id": house_id, "name": "Gryffindor", "memberCount": 0}]
 
-
-# ---- players ----
 
 def test_players_come_from_active_submissions_unassigned_first(client, conn):
     house_id = create(client, "Gryffindor")
@@ -163,8 +155,7 @@ def test_unassign_soft_deletes_the_assignment(client, conn):
     assert unassign(client, "U1").status_code == 200
     assert player(client, "U1")["houseId"] is None
     assert client.get("/admin/houses", headers=AUTH).json()[0]["memberCount"] == 0
-    # Their points still count for the house they were in.
-    assert db.get_leaderboard()[0]["house_name"] == "Gryffindor"
+    assert db.get_leaderboard("2024-01")[0]["house_name"] == "Gryffindor"
     assert conn.execute("SELECT house_id, active FROM player_houses WHERE user_id = 'U1'").fetchall() == [(house_id, 0)]
 
 
@@ -176,7 +167,7 @@ def test_player_who_left_can_be_assigned_again_if_they_rejoin(client, conn):
 
     assert put_house(client, "U1", slytherin).status_code == 200
     assert player(client, "U1")["houseId"] == slytherin
-    assert db.get_leaderboard()[0]["house_name"] == "Slytherin"
+    assert db.get_leaderboard("2024-01")[0]["house_name"] == "Slytherin"
     assert conn.execute("SELECT house_id, active FROM player_houses WHERE user_id = 'U1' ORDER BY id").fetchall() == [
         (gryffindor, 0), (slytherin, 1),
     ]
@@ -215,14 +206,12 @@ def test_assign_rejects_a_bad_house_id(client, conn, body):
     assert player(client, "U1")["houseId"] is None
 
 
-# ---- leaderboard ----
-
 def test_leaderboard_entries_carry_house_name(client, conn):
     house_id = create(client, "Gryffindor")
     answer(conn, "U1", "p1")
     answer(conn, "U2", "p1")
     put_house(client, "U1", house_id)
-    houses = {e["user_id"]: e["house_name"] for e in db.get_leaderboard()}
+    houses = {e["user_id"]: e["house_name"] for e in db.get_leaderboard("2024-01")}
     assert houses == {"U1": "Gryffindor", "U2": None}
 
 
@@ -270,17 +259,15 @@ def test_slack_house_standings_are_omitted_when_nobody_is_in_a_house():
 
 def test_posted_leaderboard_includes_house_standings(client, conn, monkeypatch):
     house_id = create(client, "Gryffindor")
-    answer(conn, "U1", "p1")
+    answer(conn, "U1", "p2")
     put_house(client, "U1", house_id)
     post = MagicMock()
     monkeypatch.setattr(app_module.slack_client, "chat_postMessage", post)
 
     assert client.post("/admin/leaderboard:send", headers=AUTH).status_code == 200
     text = post.call_args.kwargs["text"]
-    assert text.endswith(format_house_leaderboard(build_standings(db.get_leaderboard())))
+    assert text.endswith(format_house_leaderboard(build_standings(db.get_leaderboard("2024-02"))))
 
-
-# ---- page ----
 
 def test_houses_page_is_served_without_auth(client):
     response = client.get("/houses")

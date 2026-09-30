@@ -1,6 +1,4 @@
-"""Vercel entrypoint - the actual app lives in src/app.py. Kept here (and named
-app.py) because Vercel's zero-config Python detection looks for app.py at the
-project root; this just loads that file and re-exports its FastAPI instance."""
+# Vercel's zero-config Python detection looks for app.py at the root; the real app is src/app.py.
 import importlib.util
 import os
 import sys

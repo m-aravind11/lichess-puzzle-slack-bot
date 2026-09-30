@@ -22,16 +22,13 @@
   h2.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--border); }
   section { margin-bottom: 32px; }
 
-  /* ---- add form ---- */
   .add { padding: 18px; display: flex; gap: 12px; align-items: flex-end; }
   .field { display: grid; gap: 5px; flex: 1; min-width: 0; }
   .field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
   .add button { height: 38px; }
-  /* An empty date input still shows dd/mm/yyyy in full text color, which reads
-     as filled in. It's required, so :invalid means "nothing picked yet". */
+  /* Required, so :invalid means nothing picked; otherwise dd/mm/yyyy looks filled in. */
   .add input[type="date"]:invalid { color: var(--muted); }
 
-  /* ---- list ---- */
   .day {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto 28px;
@@ -41,7 +38,6 @@
     border-bottom: 1px solid var(--border);
   }
   .day:last-child { border-bottom: none; }
-  /* A tear-off calendar page: month on top, day number below. */
   .cal {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -58,7 +54,6 @@
   .day.today .cal .m { background: var(--warn); }
   .day.today .rel { color: var(--warn); font-weight: 600; }
   .day.past .when, .day.past .cal { opacity: 0.55; }
-  /* Consecutive days read as one break: no divider between them. */
   .day.joined { border-bottom-color: transparent; padding-bottom: 4px; }
   .day.joined + .day { padding-top: 4px; }
 
@@ -78,7 +73,6 @@
   .remove:hover { background: var(--surface-2); color: var(--danger); }
   @media (hover: none) { .remove { opacity: 0.6; } }
 
-  /* One heading + card per year, since the rows themselves don't show it. */
   .year + .year { margin-top: 24px; }
   #past { margin-top: 16px; }
   .past-toggle { background: none; border: none; padding: 0; color: var(--accent-strong); font-weight: 600; font-size: 0.85rem; margin-top: 10px; }
@@ -142,8 +136,7 @@
     var api = Admin.api, el = Admin.el, toast = Admin.toast;
     var dateInput = document.getElementById('date');
 
-    // Everything is a UTC calendar date (YYYY-MM-DD), matching the server, so
-    // parse and format in UTC - local time would shift dates west of Greenwich.
+    // Parse and format in UTC; local time would shift dates west of Greenwich.
     function parse(iso) { return new Date(iso + 'T00:00:00Z'); }
     function iso(d) { return d.toISOString().slice(0, 10); }
     function today() { return iso(new Date()); }
@@ -193,7 +186,6 @@
     function renderList(container, dates) {
       var t = today();
       dates.forEach(function (date, i) {
-        // Upcoming is ascending, past descending - either way neighbours are a day apart.
         var nextAdjacent = i < dates.length - 1 && Math.abs(daysBetween(date, dates[i + 1])) === 1;
         var cls = 'day';
         if (date === t) cls += ' today';
@@ -225,7 +217,6 @@
     function render() {
       var t = today();
       var upcoming = state.dates.filter(function (d) { return d >= t; });
-      // Most recent first - the recent past is what anyone would look back for.
       var past = state.dates.filter(function (d) { return d < t; }).reverse();
 
       renderByYear(document.getElementById('upcoming'), upcoming, 'No upcoming holidays - a puzzle goes out every day.');

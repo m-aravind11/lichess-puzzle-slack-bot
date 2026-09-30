@@ -1,7 +1,3 @@
-"""Holidays run end to end - HTTP route -> db -> SQL - against a real in-memory
-sqlite3 connection, plus the two crons that read them: the daily puzzle
-and the leaderboard, both skipped on a holiday."""
-
 import asyncio
 import sqlite3
 from contextlib import contextmanager
@@ -66,8 +62,6 @@ def post_puzzle(conn, puzzle_id, date):
     )
 
 
-# ---- routes ----
-
 def test_holidays_are_listed_in_date_order(client):
     for date in (day(3), day(1), day(2)):
         assert client.put(f"/admin/holidays/{date}", headers=AUTH).json() == {"date": date}
@@ -120,11 +114,8 @@ def test_holidays_page_is_public(client):
     assert "<title>Holidays" in response.text
 
 
-# ---- daily puzzle ----
-
 @pytest.fixture
 def sent(monkeypatch):
-    """Records what the daily puzzle handler would have posted, without Lichess or Slack."""
     calls = MagicMock()
     monkeypatch.setattr(app_module.lichess, "_generate_and_send_puzzle", calls.generate)
     monkeypatch.setattr(app_module.lichess, "_resend_puzzle", calls.resend)
@@ -154,8 +145,6 @@ def test_manual_send_overrides_a_holiday(conn, sent, flags):
     sent.generate.assert_called_once()
 
 
-# ---- leaderboard ----
-
 @pytest.fixture
 def slack(monkeypatch):
     fake = MagicMock()
@@ -180,10 +169,9 @@ def test_leaderboard_is_posted_on_a_normal_day(client, conn, slack):
 
 
 def test_holiday_does_not_break_a_streak(conn):
-    # The streak runs over posted puzzles, so a skipped day between two leaves no gap.
     post_puzzle(conn, "p1", day(-3))
     conn.execute("INSERT INTO holidays (date, added_at) VALUES (?, 'x')", (day(-2),))
     post_puzzle(conn, "p2", day(-1))
 
-    [entry] = db.get_leaderboard()
+    [entry] = db.get_leaderboard(db.get_leaderboard_month()["month"])
     assert entry["current_streak"] == 2

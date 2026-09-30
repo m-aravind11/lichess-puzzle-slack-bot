@@ -147,7 +147,7 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "leaderboard:send"]
             },
-            "description": "Posts current standings to the real Slack channel."
+            "description": "Posts this month's standings to the real Slack channel - plus, on the run that closes a month, the all-time standings as a second message."
           }
         },
         {
@@ -159,7 +159,19 @@
               "host": ["{{baseUrl}}"],
               "path": ["admin", "leaderboard"]
             },
-            "description": "The same standings as JSON: players, houses, streak milestones."
+            "description": "The same monthly standings as JSON: players, houses, streak milestones. Add ?month=YYYY-MM for an earlier, stored month."
+          }
+        },
+        {
+          "name": "Get all-time leaderboard",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/leaderboard/allTime",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "leaderboard", "allTime"]
+            },
+            "description": "Every finished month's points added up per player, plus house standings."
           }
         }
       ]

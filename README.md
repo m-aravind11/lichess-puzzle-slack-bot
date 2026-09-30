@@ -23,6 +23,12 @@ Each person gets their result by DM, and a leaderboard keeps score.
 - **Leaderboard.** Ranks players by points and tracks streaks of correct
   answers, calling out milestones. It's posted to Slack and also viewable on
   the web.
+- **Monthly standings.** Points start afresh each calendar month; a puzzle
+  counts toward the month it was posted in. On the 1st the leaderboard posts
+  the final standings of the month just ended, followed by a separate
+  all-time leaderboard (every finished month added up). Every finished
+  month's board is stored, and the web leaderboard lets you browse past
+  months and the all-time standings. Streaks carry across months.
 - **Houses.** Players can be grouped into teams that compete on a house
   leaderboard.
 - **Holidays.** Pick days off, and no puzzle is posted. Holidays never break

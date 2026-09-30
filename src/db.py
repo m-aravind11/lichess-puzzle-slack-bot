@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 TURSO_DATABASE_URL = os.environ['TURSO_DATABASE_URL']
 TURSO_AUTH_TOKEN = os.environ['TURSO_AUTH_TOKEN']
 
-# Module-level, so a warm serverless invocation reuses connections from the
-# previous request instead of paying a fresh Turso handshake every time.
+# Module-level so warm serverless invocations reuse connections.
 _pool: "queue.Queue" = queue.Queue()
 
 
@@ -38,9 +37,7 @@ def get_connection():
         yield conn
         conn.commit()
     except turso_serverless.OperationalError:
-        # Pooled connection's HTTP stream died server-side (idle timeout,
-        # redeploy). Drop it instead of returning it to the pool - a poisoned
-        # connection would fail the same way for every future invocation.
+        # Turso closed the stream (idle timeout, redeploy); don't return it to the pool.
         stale = True
         logger.warning("Pooled Turso connection is stale, evicting from pool")
         raise
@@ -54,9 +51,6 @@ def get_connection():
 
 
 def _retry_stale_connection(fn):
-    """A pooled connection can go stale between calls (Turso closes idle HTTP
-    streams server-side). get_connection() evicts a stale one on failure, so
-    retrying once here gets a fresh connection instead of surfacing a 500."""
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
@@ -83,10 +77,7 @@ def _now() -> str:
 
 @_retry_stale_connection
 def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
-    """Records a puzzle as posted now: inserts it if it was fetched fresh, or
-    marks it posted if it was queued. A resend of an already-posted puzzle_id
-    (active or deactivated) is a no-op, so existing submissions stay timed
-    against the original post rather than a later one."""
+    """Resending an already-posted puzzle_id is a no-op."""
     now = _now()
     with get_connection() as conn:
         cur = conn.cursor()
@@ -102,8 +93,6 @@ def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None =
 
 @_retry_stale_connection
 def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
-    """Queues a hand-picked puzzle to be posted ahead of the random fetch.
-    Returns False if the puzzle_id already exists, queued or posted."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -119,8 +108,6 @@ def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
 
 @_retry_stale_connection
 def get_next_queued_puzzle() -> dict | None:
-    """The oldest active queued puzzle. It stays queued until save_puzzle marks
-    it posted, so a failed run picks the same one up again next time."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.GET_NEXT_QUEUED)
@@ -148,10 +135,6 @@ def list_puzzles(state: str | None = None) -> list:
 
 @_retry_stale_connection
 def puzzle_sent_for_date(date: str) -> bool:
-    """True if any puzzle (active or deactivated) was already posted on this UTC
-    date - the daily fetch picks a random puzzle_id each call, so unlike
-    save_puzzle's id-based dedup, a retriggered cron needs this date check to
-    avoid posting a second, different puzzle for the same day."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.EXISTS_FOR_DATE, (date,))
@@ -170,8 +153,6 @@ def _row_to_puzzle(row: dict) -> dict:
 
 @_retry_stale_connection
 def get_active_puzzle_by_date(date: str) -> dict | None:
-    """The live puzzle for a date, if one is still active - what a force
-    resend re-posts instead of fetching a new one from Lichess."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.GET_ACTIVE_BY_DATE, (date,))
@@ -181,11 +162,7 @@ def get_active_puzzle_by_date(date: str) -> dict | None:
 
 @_retry_stale_connection
 def close_previous_puzzle(before_date: str) -> dict | None:
-    """Closes the most recent puzzle posted before before_date (YYYY-MM-DD, UTC)
-    to further submissions (sets closed_at) and returns it so the caller can post
-    its solution in-thread. Returns None if there's no such puzzle, it's been
-    deactivated, or it's already closed - so a retriggered cron doesn't re-post
-    the solution."""
+    """None if deactivated or already closed, so a retried reveal doesn't re-post."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.GET_LATEST_POSTED_BEFORE_DATE, (before_date,))
@@ -209,9 +186,6 @@ def close_previous_puzzle(before_date: str) -> dict | None:
 
 @_retry_stale_connection
 def update_puzzle_slack_ts(puzzle_id: str, slack_ts: str | None) -> None:
-    """Points a puzzle at its latest Slack post (a resend re-posts to the
-    channel, so solve-time scoring should measure from that post, not a
-    stale/failed one)."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.UPDATE_SLACK_TS, (slack_ts, puzzle_id))
@@ -219,10 +193,7 @@ def update_puzzle_slack_ts(puzzle_id: str, slack_ts: str | None) -> None:
         _puzzle_cache[puzzle_id]["slack_ts"] = slack_ts
 
 
-# Only posted puzzles are cached (GET_BY_ID excludes queued ones), and a posted
-# puzzle's fen/solution never change - slack_ts, the one field a resend updates,
-# is refreshed in update_puzzle_slack_ts. So it's safe to cache for the life of
-# the process instead of round-tripping to Turso on every submission.
+# A posted puzzle's fen/solution never change; update_puzzle_slack_ts refreshes slack_ts.
 _puzzle_cache: dict = {}
 
 
@@ -244,13 +215,6 @@ def get_puzzle(puzzle_id: str) -> dict | None:
 
 @_retry_stale_connection
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> str:
-    """Records a submission, checking in the same statement that the puzzle is still
-    active, posted, and open (see SubmissionQueries.INSERT_IF_OPEN) - one Turso round
-    trip covering both that check and the write. Returns one of SubmissionResult.RECORDED,
-    .DUPLICATE (an active submission already exists for this puzzle/user), or
-    .PUZZLE_CLOSED (the puzzle is deactivated or its solution has been revealed in-thread).
-    score is computed by the caller (see scoring.compute_score) since only it knows the
-    puzzle's post time."""
     with get_connection() as conn:
         cur = conn.cursor()
         try:
@@ -275,7 +239,6 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
 
 @_retry_stale_connection
 def deactivate_submission(submission_id: int) -> bool:
-    """Soft-deletes a submission by id. Returns True if a row was affected."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(SubmissionQueries.DEACTIVATE, (submission_id,))
@@ -286,11 +249,7 @@ def deactivate_submission(submission_id: int) -> bool:
 
 @_retry_stale_connection
 def deactivate_puzzle(puzzle_id: str) -> str:
-    """Soft-deletes a puzzle by id, refusing when it still has active submissions
-    against it - those submissions' scores and solve times feed the leaderboard,
-    so orphaning them would leave it pointing at a puzzle that no longer exists.
-    Returns one of PuzzleResult.DEACTIVATED, .NOT_FOUND (no active puzzle with
-    this id), or .HAS_ACTIVE_SUBMISSIONS."""
+    """Refuses while the puzzle has active submissions."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.DEACTIVATE_IF_NO_ACTIVE_SUBMISSIONS, (puzzle_id,))
@@ -306,8 +265,6 @@ def deactivate_puzzle(puzzle_id: str) -> str:
 
 @_retry_stale_connection
 def reactivate_puzzle(puzzle_id: str) -> str:
-    """Reverses deactivate_puzzle. Returns one of PuzzleResult.REACTIVATED,
-    .NOT_FOUND (no puzzle with this id exists at all), or .ALREADY_ACTIVE."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PuzzleQueries.REACTIVATE, (puzzle_id,))
@@ -327,36 +284,117 @@ def _solve_seconds(submitted_at: str, puzzle_slack_ts: str) -> float:
     return (submitted_at - posted_at).total_seconds()
 
 
+def _utc_month() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
 @_retry_stale_connection
-def get_leaderboard() -> list:
-    """Ranks everyone with an active submission by total points (see
-    scoring.compute_score - faster correct answers score higher), breaking ties
-    by fastest average solve time (time from puzzle post to submission, over
-    correct answers only). Each entry also carries current_streak and
-    best_streak (see LeaderboardQueries.STREAKS), and house_name (None if the
-    player was never assigned a house - one who left the company keeps theirs,
-    so their points still count for it)."""
+def get_leaderboard_month() -> dict | None:
+    """The latest posted puzzle's month; final once it's over and its last puzzle closed."""
     with get_connection() as conn:
         cur = conn.cursor()
+        cur.execute(LeaderboardQueries.LATEST_PUZZLE)
+        row = cur.fetchone()
+    if row is None:
+        return None
+    month, is_open = row
+    return {"month": month, "final": not is_open and month < _utc_month()}
 
-        cur.execute(LeaderboardQueries.TOTALS)
-        board = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
 
-        cur.execute(LeaderboardQueries.SOLVE_TIMES)
-        solve_times = defaultdict(list)
-        for row in (_row_to_dict(cur, r) for r in cur.fetchall()):
-            seconds = _solve_seconds(row["submitted_at"], row["slack_ts"])
-            # A negative value means the puzzle's stored slack_ts was overwritten by a
-            # later repost (puzzles.puzzle_id is the primary key) after this submission
-            # was recorded against the earlier post - bad data, not a real solve time.
-            if seconds >= 0:
-                solve_times[row["user_id"]].append(seconds)
+@_retry_stale_connection
+def store_finished_months() -> None:
+    """A month is finished once it's over, unless its last puzzle is still open."""
+    cutoff = _utc_month()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(LeaderboardQueries.LATEST_PUZZLE)
+        latest = cur.fetchone()
+        if latest is not None and latest[1]:
+            cutoff = min(cutoff, latest[0])
 
-        cur.execute(LeaderboardQueries.STREAKS)
-        streaks = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
+        cur.execute(LeaderboardQueries.UNSTORED_MONTHS_BEFORE, (cutoff,))
+        months = [row[0] for row in cur.fetchall()]
+        now = _now()
+        for month in months:
+            board = _month_board(cur, month)
+            params = []
+            for rank, entry in enumerate(board, start=1):
+                params += [
+                    month, entry["user_id"], entry["user_name"], rank, entry["score"],
+                    entry["correct"], entry["attempted"], entry["avg_solve_seconds"], now,
+                ]
+            rows = ", ".join([LeaderboardQueries.STORE_MONTH_ROW] * len(board))
+            cur.execute(LeaderboardQueries.STORE_MONTH.format(rows=rows), params)
+            logger.info("store_finished_months: stored %s (%d players)", month, len(board))
+
+
+@_retry_stale_connection
+def list_stored_months() -> list:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(LeaderboardQueries.STORED_MONTHS)
+        return [row[0] for row in cur.fetchall()]
+
+
+@_retry_stale_connection
+def get_stored_leaderboard(month: str) -> list | None:
+    """None if the month isn't stored."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(LeaderboardQueries.STORED_MONTH, (month,))
+        board = [_row_to_dict(cur, r) for r in cur.fetchall()]
+        if not board:
+            return None
 
         cur.execute(LeaderboardQueries.HOUSE_MEMBERS)
         houses = dict(cur.fetchall())
+
+    for entry in board:
+        entry["house_name"] = houses.get(entry["user_id"])
+        entry["current_streak"] = None
+        entry["best_streak"] = None
+    return board
+
+
+@_retry_stale_connection
+def get_all_time_leaderboard() -> list:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(LeaderboardQueries.ALL_TIME)
+        board = [_row_to_dict(cur, r) for r in cur.fetchall()]
+
+        cur.execute(LeaderboardQueries.HOUSE_MEMBERS)
+        houses = dict(cur.fetchall())
+
+    for entry in board:
+        entry["house_name"] = houses.get(entry["user_id"])
+    return sorted(board, key=lambda r: (-r["score"], -r["correct"], (r["user_name"] or r["user_id"]).lower()))
+
+
+@_retry_stale_connection
+def get_leaderboard(month: str) -> list:
+    """Ties broken by more correct, then faster average solve time."""
+    with get_connection() as conn:
+        return _month_board(conn.cursor(), month)
+
+
+def _month_board(cur, month: str) -> list:
+    cur.execute(LeaderboardQueries.TOTALS, (month,))
+    board = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
+
+    cur.execute(LeaderboardQueries.SOLVE_TIMES, (month,))
+    solve_times = defaultdict(list)
+    for row in (_row_to_dict(cur, r) for r in cur.fetchall()):
+        seconds = _solve_seconds(row["submitted_at"], row["slack_ts"])
+        # Negative: slack_ts was overwritten by a later repost after this submission.
+        if seconds >= 0:
+            solve_times[row["user_id"]].append(seconds)
+
+    cur.execute(LeaderboardQueries.STREAKS)
+    streaks = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
+
+    cur.execute(LeaderboardQueries.HOUSE_MEMBERS)
+    houses = dict(cur.fetchall())
 
     for user_id, entry in board.items():
         entry["house_name"] = houses.get(user_id)
@@ -382,7 +420,7 @@ def list_houses() -> list:
 
 @_retry_stale_connection
 def create_house(name: str) -> int | None:
-    """Returns the new house's id, or None if the name is already taken."""
+    """None if the name is taken."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(HouseQueries.INSERT, (name,))
@@ -396,7 +434,6 @@ def create_house(name: str) -> int | None:
 
 @_retry_stale_connection
 def list_players() -> list:
-    """Everyone with an active submission, with their house_id (None if unassigned)."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PlayerQueries.LIST)
@@ -405,11 +442,7 @@ def list_players() -> list:
 
 @_retry_stale_connection
 def assign_player_house(user_id: str, house_id: int) -> str:
-    """Puts an unassigned player in a house. A player's house is fixed once
-    assigned, so this never switches it - unassign_player_house is only for
-    someone leaving the company. Re-assigning the house they're already in is a no-op success. Returns one of PlayerHouseResult.ASSIGNED, .PLAYER_NOT_FOUND (no
-    active submissions), .HOUSE_NOT_FOUND, or .ALREADY_ASSIGNED (to a different
-    house)."""
+    """A player's house is fixed once assigned."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PlayerQueries.EXISTS, (user_id,))
@@ -434,8 +467,6 @@ def assign_player_house(user_id: str, house_id: int) -> str:
 
 @_retry_stale_connection
 def unassign_player_house(user_id: str) -> bool:
-    """Soft-deletes a player's house assignment when they leave the company.
-    Returns True if they had one."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(PlayerQueries.UNASSIGN, (user_id,))
@@ -446,7 +477,6 @@ def unassign_player_house(user_id: str) -> bool:
 
 @_retry_stale_connection
 def list_holidays() -> list:
-    """Every holiday date (YYYY-MM-DD, UTC), oldest first."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(HolidayQueries.LIST)
@@ -463,7 +493,6 @@ def is_holiday(date: str) -> bool:
 
 @_retry_stale_connection
 def add_holiday(date: str) -> None:
-    """Marks date as a holiday. Already one is a no-op."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(HolidayQueries.INSERT, (date, _now()))
@@ -472,7 +501,6 @@ def add_holiday(date: str) -> None:
 
 @_retry_stale_connection
 def remove_holiday(date: str) -> bool:
-    """Returns True if date was a holiday."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(HolidayQueries.DELETE, (date,))

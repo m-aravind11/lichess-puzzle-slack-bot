@@ -22,7 +22,6 @@
   h2.eyebrow::after { content: ""; flex: 1; height: 1px; background: var(--border); }
   section { margin-bottom: 32px; }
 
-  /* ---- streak milestones ---- */
   .milestones {
     padding: 14px 18px;
     border-left: 3px solid var(--accent);
@@ -31,7 +30,6 @@
   .milestones strong { font-weight: 650; }
   .milestones .days { color: var(--accent-strong); font-weight: 650; font-variant-numeric: tabular-nums; }
 
-  /* ---- houses: click one to filter the players below ---- */
   .house-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
   .house-card {
     text-align: left;
@@ -53,7 +51,6 @@
   .house-card .pts small { font-size: 0.8rem; font-weight: 500; color: var(--muted); letter-spacing: 0; }
   .house-card .meta { color: var(--muted); font-size: 0.8rem; }
 
-  /* ---- players ---- */
   .table-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
   .showing { color: var(--muted); font-size: 0.85rem; }
   .showing button { background: none; border: none; padding: 0 0 0 6px; color: var(--accent-strong); font-weight: 600; font-size: inherit; }
@@ -71,6 +68,32 @@
   td.house.none { color: var(--muted); }
   td.points { font-weight: 700; }
   .best { color: var(--muted); font-size: 0.8rem; margin-left: 4px; }
+
+  /* Wide screens: month list in the left margin, so main keeps the shared width. */
+  main { position: relative; }
+  .months { margin-bottom: 24px; }
+  .month-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+  .month-link { text-decoration: none; color: inherit; white-space: nowrap; }
+  .month-link[aria-current="page"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-strong); }
+  .month-link .tag { color: var(--muted); font-size: 0.75rem; font-weight: 500; }
+
+  @media (min-width: 1240px) {
+    .months { position: absolute; top: 32px; bottom: 0; right: 100%; width: 180px; margin: 0; }
+    .months-inner { position: sticky; top: 88px; }
+    .month-list { flex-direction: column; gap: 2px; overflow: visible; }
+    .month-link.chip {
+      display: flex;
+      justify-content: space-between;
+      border: none;
+      border-radius: 8px;
+      background: none;
+      padding: 7px 12px;
+      color: var(--muted);
+      font-weight: 550;
+    }
+    .month-link.chip:hover { color: var(--fg); background: var(--surface-2); }
+    .month-link.chip[aria-current="page"] { color: var(--fg); background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); }
+  }
 
   @media (max-width: 560px) {
     .hide-sm, .best { display: none; }
@@ -91,8 +114,8 @@
   </div>
 </header>
 <main>
-  <h1>Leaderboard</h1>
-  <p class="sub">Ranked by points - faster solves score higher; ties broken by fastest average solve time.</p>
+  <h1 id="title">Leaderboard</h1>
+  <p class="sub" id="sub">Ranked by this month's points - faster solves score higher; ties broken by fastest average solve time. Points start afresh each month.</p>
 
   <p class="loading" id="loading" hidden>Loading…</p>
 
@@ -107,6 +130,15 @@
   </section>
 
   <div id="app" hidden>
+    <nav class="months" id="monthNav" aria-label="Standings" hidden>
+      <div class="months-inner">
+        <h2 class="eyebrow">Standings</h2>
+        <div class="month-list" id="months"></div>
+      </div>
+    </nav>
+
+    <p class="sub" id="storedNote" hidden>Final standings, as stored when the month closed. Streaks aren't monthly, so they're only on the latest month.</p>
+
     <section id="milestoneSection" hidden>
       <h2 class="eyebrow">Streak milestones</h2>
       <div class="card milestones" id="milestones"></div>
@@ -132,14 +164,58 @@
 <script>
   (function () {
     var el = Admin.el;
-    // houseFilter: a house name, or null for everyone.
     var state = { data: null, houseFilter: null };
 
+    var params = new URLSearchParams(location.search);
+    var allTime = params.get('view') === 'allTime';
+    var requestedMonth = params.get('month');
+
     function load() {
-      return Admin.api('GET', '/admin/leaderboard').then(function (data) {
+      var path = allTime ? '/admin/leaderboard/allTime'
+        : '/admin/leaderboard' + (requestedMonth ? '?month=' + encodeURIComponent(requestedMonth) : '');
+      return Admin.api('GET', path).then(function (data) {
         state.data = data;
         Admin.showApp();
         render();
+      });
+    }
+
+    function formatMonth(month) {
+      var parts = month.split('-');
+      return new Date(Date.UTC(+parts[0], +parts[1] - 1, 1)).toLocaleString('en', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    function renderTitle() {
+      var title;
+      if (allTime) {
+        title = 'All-time standings' + (state.data.through ? ' - through ' + formatMonth(state.data.through) : '');
+        document.getElementById('sub').textContent = "Every finished month's points added up; ties broken by more solves. The month in progress joins once it closes.";
+      } else {
+        title = state.data.final ? 'Final standings' : 'Leaderboard';
+        if (state.data.month) title += ' - ' + formatMonth(state.data.month);
+      }
+      document.getElementById('title').textContent = title;
+      document.getElementById('storedNote').hidden = !state.data.stored;
+    }
+
+    // The latest month links without ?month, so it keeps following the current month.
+    function renderMonths() {
+      var list = document.getElementById('months');
+      list.textContent = '';
+      var months = state.data.months;
+      document.getElementById('monthNav').hidden = !months.length;
+
+      var allTimeLink = el('a', 'chip month-link', 'All-time');
+      allTimeLink.href = '/leaderboard?view=allTime';
+      if (allTime) allTimeLink.setAttribute('aria-current', 'page');
+      list.appendChild(allTimeLink);
+
+      months.forEach(function (month, i) {
+        var link = el('a', 'chip month-link', formatMonth(month));
+        link.href = i === 0 ? '/leaderboard' : '/leaderboard?month=' + encodeURIComponent(month);
+        if (i === 0) link.appendChild(el('span', 'tag', 'Latest'));
+        if (!allTime && month === state.data.month) link.setAttribute('aria-current', 'page');
+        list.appendChild(link);
       });
     }
 
@@ -150,7 +226,7 @@
     function renderMilestones() {
       var box = document.getElementById('milestones');
       box.textContent = '';
-      var milestones = state.data.milestones;
+      var milestones = state.data.milestones || [];
       document.getElementById('milestoneSection').hidden = !milestones.length;
       milestones.forEach(function (m) {
         var line = el('div');
@@ -206,13 +282,21 @@
       }
 
       if (!players.length) {
-        wrap.appendChild(el('p', 'empty', state.data.players.length ? 'Nobody in this house has played yet.' : 'No answers yet - standings appear after the first submission.'));
+        var empty;
+        if (state.data.players.length) empty = allTime ? 'Nobody in this house has played yet.' : 'Nobody in this house has played this month yet.';
+        else empty = allTime ? 'No finished months yet - all-time standings appear once the first month closes.' : 'No answers yet this month - standings appear after the first submission.';
+        wrap.appendChild(el('p', 'empty', empty));
         return;
       }
 
+      var showStreaks = !allTime && !state.data.stored;
+      var columns = [['#', ''], ['Name', ''], ['House', 'hide-sm'], ['Points', 'num'], ['Solved', 'num']];
+      columns.push(allTime ? ['Months', 'num hide-sm'] : ['Avg solve', 'num hide-sm']);
+      if (showStreaks) columns.push(['Streak', 'num']);
+
       var table = el('table');
       var head = el('tr');
-      [['#', ''], ['Name', ''], ['House', 'hide-sm'], ['Points', 'num'], ['Solved', 'num'], ['Avg solve', 'num hide-sm'], ['Streak', 'num']].forEach(function (c) {
+      columns.forEach(function (c) {
         head.appendChild(el('th', c[1], c[0]));
       });
       var thead = el('thead');
@@ -227,10 +311,12 @@
         tr.appendChild(el('td', 'house hide-sm' + (p.house ? '' : ' none'), p.house || '-'));
         tr.appendChild(el('td', 'points num', String(p.points)));
         tr.appendChild(el('td', 'num', p.correct + '/' + p.attempted));
-        tr.appendChild(el('td', 'num hide-sm', p.avgSolveTime));
-        var streak = el('td', 'num', String(p.currentStreak));
-        if (p.bestStreak > p.currentStreak) streak.appendChild(el('span', 'best', 'best ' + p.bestStreak));
-        tr.appendChild(streak);
+        tr.appendChild(el('td', 'num hide-sm', allTime ? String(p.months) : p.avgSolveTime));
+        if (showStreaks) {
+          var streak = el('td', 'num', String(p.currentStreak));
+          if (p.bestStreak > p.currentStreak) streak.appendChild(el('span', 'best', 'best ' + p.bestStreak));
+          tr.appendChild(streak);
+        }
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);
@@ -238,6 +324,8 @@
     }
 
     function render() {
+      renderTitle();
+      renderMonths();
       renderMilestones();
       renderHouses();
       renderPlayers();

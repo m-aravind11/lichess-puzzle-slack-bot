@@ -17,13 +17,12 @@ import db
 from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
-from slack_helpers import format_leaderboard_post, format_seconds, format_solution_reveal
-from standings import build_standings
+from slack_helpers import (
+    format_all_time_leaderboard_post, format_leaderboard_post, format_seconds, format_solution_reveal,
+)
+from standings import build_all_time_standings, build_standings
 from slack_verify import verify_slack_request
 
-# One id per incoming request, auto-injected into every log line (including ones
-# from db.py, slack_verify.py, etc. - anywhere that doesn't have the request in
-# scope to pass it explicitly) so concurrent requests' logs can be told apart.
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
 
@@ -55,23 +54,18 @@ async def assign_request_id(request: Request, call_next):
 
 
 def _bearer_matches(request: Request, secret: str | None) -> bool:
-    # Fail closed: an unset secret (misconfigured deploy, accidentally deleted
-    # env var) matches nothing, rather than waving every request through.
-    # compare_digest, so response time doesn't leak how much of a guess was right.
+    # Fail closed on an unset secret; compare_digest to avoid a timing leak.
     return bool(secret) and hmac.compare_digest(
         request.headers.get('Authorization', '').encode(), f'Bearer {secret}'.encode(),
     )
 
 
 def require_admin_auth(request: Request) -> None:
-    # People - the admin pages, curl. ADMIN_SECRET only: the cron's secret
-    # never needs to reach a person, and each can be rotated on its own.
     if not _bearer_matches(request, Security.ADMIN_SECRET):
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
 
 def require_cron_auth(request: Request) -> None:
-    # The scheduled routes. ADMIN_SECRET works too, for manual reruns (?force).
     if not (_bearer_matches(request, Security.CRON_SECRET) or _bearer_matches(request, Security.ADMIN_SECRET)):
         raise HTTPException(status_code=401, detail="Invalid Bearer Token")
 
@@ -80,8 +74,7 @@ def require_cron_auth(request: Request) -> None:
 async def root():
     return FileResponse(Paths.INDEX_HTML_PATH)
 
-# These pages are public - they hold no data, and every call they make goes
-# through the admin routes below, with the secret the user types in.
+# Public pages: they hold no data and call the admin routes with the typed-in secret.
 @app.get('/houses')
 async def houses_page():
     return FileResponse(Paths.HOUSES_HTML_PATH)
@@ -110,8 +103,7 @@ async def queue_puzzle(request: Request):
     if not puzzle_id:
         raise HTTPException(status_code=400, detail="puzzleId is required")
 
-    # Resolved here, at queue time, so a bad id is rejected immediately instead
-    # of silently falling back to a random puzzle when the cron runs.
+    # Resolved now, so a bad id fails here rather than at cron time.
     try:
         raw_puzzle = lichess.get_puzzle_by_id(puzzle_id)
     except requests.HTTPError:
@@ -188,9 +180,6 @@ async def slack_interactions(request: Request):
 
 @app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_cron_auth)])
 async def reveal_puzzle_solution():
-    # Cron runs this the day after a puzzle is posted, before /admin/leaderboard:send
-    # and the next /admin/dailyPuzzle:send, so the solution lands in-thread for
-    # everyone (including people who never answered) just ahead of the leaderboard.
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         puzzle = db.close_previous_puzzle(date_str)
@@ -205,8 +194,6 @@ async def reveal_puzzle_solution():
             channel=lichess.SLACK_CHANNEL_ID,
             thread_ts=puzzle['slack_ts'],
             text=format_solution_reveal(puzzle),
-            # Stays a threaded reply (keeps it attached to the puzzle post) but also
-            # surfaces in the main channel feed, for people who never opened the thread.
             reply_broadcast=True,
         )
     except Exception:
@@ -216,22 +203,34 @@ async def reveal_puzzle_solution():
 
 @app.post('/admin/leaderboard:send', dependencies=[Depends(require_cron_auth)])
 async def send_leaderboard():
-    # Posted only on puzzle days, like the puzzle itself.
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    if db.is_holiday(date_str):
-        logger.info("admin/leaderboard:send: %s is a holiday, skipping", date_str)
-        return Response(status_code=200)
-
     try:
-        board = db.get_leaderboard()
+        # Before the holiday check, so storing doesn't wait for a puzzle day.
+        db.store_finished_months()
+
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if db.is_holiday(date_str):
+            logger.info("admin/leaderboard:send: %s is a holiday, skipping", date_str)
+            return Response(status_code=200)
+
+        leaderboard_month = db.get_leaderboard_month()
+        board = db.get_leaderboard(leaderboard_month["month"]) if leaderboard_month else []
         if not board:
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
-            text=format_leaderboard_post(build_standings(board)),
+            text=format_leaderboard_post(build_standings(board, **leaderboard_month)),
         )
+
+        # final implies the month was just stored, so all-time includes it.
+        if leaderboard_month["final"]:
+            slack_client.chat_postMessage(
+                channel=lichess.SLACK_CHANNEL_ID,
+                text=format_all_time_leaderboard_post(
+                    build_all_time_standings(db.get_all_time_leaderboard(), leaderboard_month["month"])
+                ),
+            )
     except Exception:
         logger.exception("admin/leaderboard:send failed")
         raise
@@ -268,7 +267,7 @@ async def list_players():
 @app.put('/admin/players/{user_id}/house', dependencies=[Depends(require_admin_auth)])
 async def assign_player_house(user_id: str, request: Request):
     house_id = (await request.json()).get('houseId')
-    # bool is an int subclass - reject it so `true` doesn't quietly mean house 1.
+    # bool is an int subclass, so reject it explicitly.
     if not isinstance(house_id, int) or isinstance(house_id, bool):
         raise HTTPException(status_code=400, detail="houseId must be an integer")
 
@@ -287,11 +286,59 @@ async def unassign_player_house(user_id: str):
         raise HTTPException(status_code=404, detail="Player isn't in a house")
     return Response(status_code=200)
 
-@app.get('/admin/leaderboard', dependencies=[Depends(require_admin_auth)])
-async def get_leaderboard():
-    """The same standings /admin/leaderboard:send posts to Slack, as JSON."""
-    standings = build_standings(db.get_leaderboard())
+def _leaderboard_months(current_month: str | None) -> list:
+    months = set(db.list_stored_months())
+    if current_month:
+        months.add(current_month)
+    return sorted(months, reverse=True)
+
+@app.get('/admin/leaderboard/allTime', dependencies=[Depends(require_admin_auth)])
+async def get_all_time_leaderboard():
+    stored_months = db.list_stored_months()
+    standings = build_all_time_standings(db.get_all_time_leaderboard(), stored_months[0] if stored_months else None)
+    leaderboard_month = db.get_leaderboard_month()
     return {
+        "through": standings["through"],
+        "months": _leaderboard_months(leaderboard_month["month"] if leaderboard_month else None),
+        "players": [
+            {
+                "rank": p["rank"],
+                "userName": p["name"],
+                "house": p["house"],
+                "points": p["points"],
+                "correct": p["correct"],
+                "attempted": p["attempted"],
+                "months": p["months"],
+            }
+            for p in standings["players"]
+        ],
+        "houses": standings["houses"],
+    }
+
+@app.get('/admin/leaderboard', dependencies=[Depends(require_admin_auth)])
+async def get_leaderboard(month: str | None = None):
+    leaderboard_month = db.get_leaderboard_month()
+    current_month = leaderboard_month["month"] if leaderboard_month else None
+    stored = month is not None and month != current_month
+    if stored:
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM")
+        board = db.get_stored_leaderboard(month)
+        if board is None:
+            raise HTTPException(status_code=404, detail="No stored leaderboard for that month")
+        standings = build_standings(board, month, final=True)
+    elif leaderboard_month:
+        standings = build_standings(db.get_leaderboard(current_month), **leaderboard_month)
+    else:
+        standings = build_standings([])
+
+    return {
+        "month": standings["month"],
+        "final": standings["final"],
+        "stored": stored,
+        "months": _leaderboard_months(current_month),
         "players": [
             {
                 "rank": p["rank"],
@@ -314,8 +361,7 @@ async def get_leaderboard():
     }
 
 def _parse_holiday_date(date: str) -> str:
-    # strptime rather than date.fromisoformat, which also takes compact forms
-    # like 20240101 - rows must match substr(posted_at, 1, 10) exactly.
+    # Not date.fromisoformat, which also accepts compact forms like 20240101.
     try:
         return datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
     except ValueError:
@@ -328,8 +374,6 @@ async def list_holidays():
 @app.put('/admin/holidays/{date}', dependencies=[Depends(require_admin_auth)])
 async def add_holiday(date: str):
     date = _parse_holiday_date(date)
-    # A past day's puzzle has already gone out (or not), so a holiday there
-    # would change nothing. Dates are UTC, like a puzzle's day.
     if date < datetime.now(timezone.utc).strftime("%Y-%m-%d"):
         raise HTTPException(status_code=400, detail="date is in the past")
     db.add_holiday(date)

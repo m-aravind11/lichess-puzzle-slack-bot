@@ -77,7 +77,7 @@ def test_correct_answer_with_a_channel_post_announces_in_thread(monkeypatch):
 
     interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
 
-    # First chat_postMessage is the DM (via dm()), second is the thread announcement.
+    # The DM, then the thread announcement.
     assert slack_client.chat_postMessage.call_count == 2
     thread_call = slack_client.chat_postMessage.call_args_list[1]
     assert thread_call.kwargs["thread_ts"] == "1700000000.0"

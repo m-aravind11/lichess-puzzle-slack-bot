@@ -1,8 +1,3 @@
-"""record_submission's INSERT_IF_OPEN gates on the puzzle row itself (active,
-posted, not closed) - no "latest puzzle" concept. Runs against a real in-memory
-sqlite3 connection since the gating lives in the SQL (see queries.SubmissionQueries
-.INSERT_IF_OPEN), not in Python that a mock could stand in for."""
-
 import sqlite3
 from contextlib import contextmanager
 from unittest.mock import MagicMock
@@ -39,9 +34,7 @@ def test_open_puzzle_accepts_a_submission(conn):
 
 
 def test_duplicate_submission_is_rejected(monkeypatch):
-    # sqlite3's own IntegrityError isn't turso_serverless.IntegrityError, so this
-    # is mocked rather than run against the real in-memory connection like the
-    # rest of this file.
+    # sqlite3's IntegrityError isn't turso_serverless's, so mock it.
     cur = MagicMock()
     cur.execute.side_effect = turso_serverless.IntegrityError("duplicate")
     mock_conn = MagicMock()

@@ -1,23 +1,9 @@
-"""The leaderboard's content, independent of how it's shown. build_standings is
-the one place standings are computed; the Slack post (slack_helpers) and the
-web leaderboard (GET /admin/leaderboard) only render what it returns, so the
-two always agree."""
+"""Standings shared by the Slack posts and the web leaderboard, so they always agree."""
 
 from constants import Streaks
 
 
-def build_standings(board: list) -> dict:
-    """From db.get_leaderboard()'s board (already ranked):
-
-    - players: rank, user_id, name, house (None if never assigned), points,
-      correct, attempted, avg_solve_seconds, current_streak, best_streak
-    - houses: rank, name, points (sum of the house's players'), correct,
-      players - ranked, ties broken by more correct answers. Players never
-      assigned a house aren't counted; ones who left the company still are.
-    - milestones: streak and the players (user_id, name) whose current streak
-      is exactly at it, longest first. The leaderboard posts once a day, so
-      matching exactly announces each milestone once, the day it's hit.
-    """
+def build_standings(board: list, month: str | None = None, final: bool = False) -> dict:
     players = [
         {
             "rank": i + 1,
@@ -33,7 +19,30 @@ def build_standings(board: list) -> dict:
         }
         for i, row in enumerate(board)
     ]
-    return {"players": players, "houses": _house_standings(players), "milestones": _streak_milestones(players)}
+    return {
+        "month": month,
+        "final": final,
+        "players": players,
+        "houses": _house_standings(players),
+        "milestones": _streak_milestones(players),
+    }
+
+
+def build_all_time_standings(board: list, through: str | None) -> dict:
+    players = [
+        {
+            "rank": i + 1,
+            "user_id": row["user_id"],
+            "name": row["user_name"] or row["user_id"],
+            "house": row["house_name"],
+            "points": row["score"],
+            "correct": row["correct"],
+            "attempted": row["attempted"],
+            "months": row["months"],
+        }
+        for i, row in enumerate(board)
+    ]
+    return {"through": through, "players": players, "houses": _house_standings(players)}
 
 
 def _house_standings(players: list) -> list:

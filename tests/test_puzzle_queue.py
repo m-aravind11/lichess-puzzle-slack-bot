@@ -1,7 +1,3 @@
-"""Queued (curated, not yet posted) puzzles share the puzzles table with posted ones.
-Runs against a real in-memory sqlite3 connection, since what matters is that
-queued rows stay out of every "posted puzzle" query."""
-
 import sqlite3
 from contextlib import contextmanager
 
@@ -47,7 +43,6 @@ def test_next_queued_puzzle_is_fifo_and_advances_once_posted(conn):
     db.queue_puzzle("q2", "fen2", ["d4"])
 
     assert db.get_next_queued_puzzle() == {"puzzle_id": "q1", "fen": "fen1", "solution": ["e4"]}
-    # Not consumed until it's actually posted, so a failed run retries the same one.
     assert db.get_next_queued_puzzle()["puzzle_id"] == "q1"
 
     db.save_puzzle("q1", "fen1", ["e4"])
@@ -80,8 +75,6 @@ def test_queued_puzzle_does_not_count_as_posted_for_the_day(conn, monkeypatch):
 
 
 def test_puzzle_queued_after_todays_post_does_not_shadow_it_for_submissions(conn):
-    # A queued row has a newer rowid than today's posted puzzle, but hasn't been
-    # posted - submissions for today's puzzle must still be accepted.
     db.save_puzzle("today", "fen", ["e4"])
     db.queue_puzzle("tomorrow", "fen", ["d4"])
 
@@ -89,8 +82,6 @@ def test_puzzle_queued_after_todays_post_does_not_shadow_it_for_submissions(conn
 
 
 def test_multiple_puzzles_posted_the_same_day_are_each_independently_open(conn):
-    # No "latest puzzle" gating anymore - each active, posted, open puzzle
-    # accepts its own submissions regardless of post order or rowid.
     db.queue_puzzle("queued", "fen", ["e4"])
     db.deactivate_puzzle("queued")
     db.save_puzzle("random", "fen", ["d4"])
@@ -129,8 +120,6 @@ def test_migrations_keep_existing_puzzles_as_posted(monkeypatch):
     posted_at = "2026-09-18T11:30:57.799+00:00"
     assert rows == [
         ("posted", "fen", '["e4"]', "random", posted_at, posted_at, "1789731057.798759", 0),
-        # No Slack post time to recover, so the bare date is the best available -
-        # still a valid YYYY-MM-DD prefix for the puzzle-day lookup.
         ("post_failed", "fen", '["d4"]', "random", "2026-09-19", "2026-09-19", None, 1),
     ]
     connection.close()

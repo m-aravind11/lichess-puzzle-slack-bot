@@ -10,21 +10,16 @@ class Paths:
 
 
 class Security:
-    # The Cloudflare cron's key - only the scheduled routes accept it.
     CRON_SECRET = os.environ.get('CRON_SECRET')
-    # People's key (admin pages, curl) - accepted by every admin route.
     ADMIN_SECRET = os.environ.get('ADMIN_SECRET')
 
 
 class Validation:
-    # The trailing promotion group's '=' is optional so plain UCI-style promotions
-    # (e7e8q, alongside SAN's e8=Q) pass through to parse_san, which accepts both.
+    # '=' is optional so UCI-style promotions (e7e8q) pass through to parse_san.
     SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=?[QRBN])?)[+#]?$', re.IGNORECASE)
 
 
 class SlackActions:
-    # Answer-submission modal: a button on the puzzle post opens this privately, so
-    # moves never appear in the thread where others could see or copy them.
     OPEN_ANSWER_MODAL = "open_answer_modal"
     ANSWER_MODAL_CALLBACK_ID = "answer_modal"
     MOVES_BLOCK_ID = "moves_block"
@@ -32,8 +27,7 @@ class SlackActions:
 
 
 class Streaks:
-    # Current-streak lengths announced under the leaderboard. It posts once a day,
-    # so matching exactly (not >=) announces each milestone once, the day it's hit.
+    # Matched exactly, not >=, so each is announced once, the day it's hit.
     MILESTONES = (3, 7, 14, 30, 50, 100, 150, 200, 250, 300, 365)
 
 
@@ -65,5 +59,4 @@ class PlayerHouseResult:
     ASSIGNED = "assigned"
     PLAYER_NOT_FOUND = "player_not_found"
     HOUSE_NOT_FOUND = "house_not_found"
-    # Already in a different house - houses are fixed once assigned.
     ALREADY_ASSIGNED = "already_assigned"

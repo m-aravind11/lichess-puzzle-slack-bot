@@ -1,10 +1,5 @@
-/* Shared by the admin pages (leaderboard, houses, holidays). Each page has a #loading
-   line, an #unlockSection form (#unlockForm, #secret), an #app container and a
-   #toast - all but #toast start hidden - and calls Admin.start(load); load()
-   fetches its data and calls Admin.showApp(). The secret lives in
-   sessionStorage, so unlocking one page unlocks the others for the rest of the
-   tab's life. With a saved secret the unlock form never shows unless the
-   secret is rejected. */
+/* Pages need #loading, #unlockSection (#unlockForm, #secret), #app and #toast,
+   and call Admin.start(load), where load() fetches and calls Admin.showApp(). */
 (function () {
   var STORAGE_KEY = 'adminSecret';
 
@@ -15,7 +10,7 @@
     try {
       if (value) sessionStorage.setItem(STORAGE_KEY, value);
       else sessionStorage.removeItem(STORAGE_KEY);
-    } catch (e) { /* storage unavailable - secret lives in memory only */ }
+    } catch (e) { /* storage unavailable: keep it in memory */ }
   }
   var secret = readSecret();
 
@@ -84,7 +79,6 @@
     }
     show('loading');
     load().catch(function (err) {
-      // A rejected secret has already switched to the unlock form (see api).
       document.getElementById('loading').hidden = true;
       toast(err.message, true);
     });

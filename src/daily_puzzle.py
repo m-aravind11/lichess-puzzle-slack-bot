@@ -16,9 +16,7 @@ from constants import SlackActions
 logger = logging.getLogger(__name__)
 
 class Constants:
-    # /api/puzzle/next?difficulty=easier (anonymous) skews puzzle rating to
-    # roughly 1150-1300 - an easier on-ramp than Lichess's own official daily
-    # puzzle, which can land at any rating.
+    # difficulty=easier keeps puzzles around 1150-1300 rating.
     PUZZLE_THEMES = ("mateIn2", "mateIn3")
     LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty=easier"
     LICHESS_PUZZLE_BY_ID_URL = "https://lichess.org/api/puzzle/{puzzle_id}"
@@ -32,9 +30,7 @@ class LichessDailyPuzzle:
         self.SLACK_CHANNEL_ID = os.environ['SLACK_CHANNEL_ID']
 
     def _fetch_json_with_retries(self, url: str) -> dict:
-        # The cron trigger doesn't retry a failed run on its own, so a couple of
-        # in-process retries here are the only thing standing between a transient
-        # Lichess hiccup and no puzzle getting posted for the day.
+        # The cron doesn't retry a failed run, so retry here.
         attempts = Constants.FETCH_RETRIES + 1
         for attempt in range(1, attempts + 1):
             response = requests.get(url)
@@ -104,10 +100,8 @@ class LichessDailyPuzzle:
         return token
 
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
-        """submitted_moves = player's own moves only (san_solution[0::2]); opponent
-        replies (odd indices) come from san_solution itself, never from the user -
-        Lichess's solution only records one of possibly several valid replies.
-        Tolerant of a missing/'*' capture marker, case, and check/mate suffixes."""
+        # Only the player's moves are submitted; opponent replies come from the
+        # solution, since Lichess records just one of possibly several valid ones.
         expected_player_move_count = len(san_solution[0::2])
         if len(submitted_moves) != expected_player_move_count:
             return False
@@ -191,9 +185,6 @@ class LichessDailyPuzzle:
         db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
 
     def _fetch_new_puzzle(self) -> tuple[str, str, list]:
-        # Queued puzzles were resolved (fen/solution fetched and validated) when
-        # they were added via POST /admin/puzzles, so this path is a DB read, not
-        # a Lichess round trip.
         queued = db.get_next_queued_puzzle()
         if queued:
             return queued["fen"], queued["puzzle_id"], queued["solution"]
@@ -221,20 +212,14 @@ class LichessDailyPuzzle:
         self._post_and_save_puzzle(fen, puzzle_id, san_solution, today)
 
     async def handle_puzzle_generation_and_sending(self, force: bool = False, new_puzzle: bool = False) -> None:
-        # UTC, to match the date part of posted_at (see PuzzleQueries.EXISTS_FOR_DATE).
         today = datetime.now(timezone.utc)
         date_str = today.strftime("%Y-%m-%d")
 
         if new_puzzle:
-            # Explicit override: always fetch a different puzzle, ignoring force
-            # and whatever's already been sent today.
             self._generate_and_send_puzzle(today)
             return
 
         if force:
-            # Network-issue retry: repost today's puzzle rather than fetching a
-            # new random one. Falls through to a fresh fetch if there's nothing
-            # active left to resend (e.g. it was deactivated).
             existing = db.get_active_puzzle_by_date(date_str)
             if existing:
                 self._resend_puzzle(existing, today)
@@ -243,16 +228,10 @@ class LichessDailyPuzzle:
             return
 
         if db.is_holiday(date_str):
-            # A day off: nothing is posted, and since streaks run over posted
-            # puzzles rather than calendar days, nobody's streak breaks. Only the
-            # plain cron run checks this - force/newPuzzle above are manual, so
-            # an admin can still post on a holiday deliberately.
             logger.info("%s is a holiday, skipping", date_str)
             return
 
         if db.puzzle_sent_for_date(date_str):
-            # Default idempotency guard: a retriggered cron with no flags must
-            # not post a second, different puzzle for the same day.
             logger.info("Puzzle already sent for %s, skipping", date_str)
             return
 

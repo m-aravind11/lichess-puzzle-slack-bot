@@ -1,7 +1,3 @@
-"""Runs against a real in-memory sqlite3 connection - save_puzzle's behaviour
-lives in UPSERT_POSTED's SQL (insert, mark a queued row posted, or no-op), which
-a mocked cursor can't exercise."""
-
 import sqlite3
 from contextlib import contextmanager
 

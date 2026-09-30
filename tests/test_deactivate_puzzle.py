@@ -6,8 +6,6 @@ import queries
 
 
 def _patch_connection(monkeypatch, rowcount: int, fetchone_result):
-    """Mocks the cursor deactivate_puzzle drives: rowcount from the conditional
-    UPDATE, and what the fallback SELECT (only reached when rowcount is 0) finds."""
     cur = MagicMock()
     cur.rowcount = rowcount
     cur.fetchone.return_value = fetchone_result
@@ -43,6 +41,4 @@ def test_update_affecting_no_row_and_puzzle_still_active_returns_has_active_subm
 def test_fallback_check_is_only_run_when_the_update_affects_no_row(monkeypatch):
     cur = _patch_connection(monkeypatch, rowcount=1, fetchone_result={"puzzle_id": "p3"})
     db.deactivate_puzzle("p3")
-    # A truthy fetchone_result here would flip the result to HAS_ACTIVE_SUBMISSIONS
-    # if the fallback query ran - it mustn't, since the fast path already succeeded.
     assert cur.execute.call_count == 1

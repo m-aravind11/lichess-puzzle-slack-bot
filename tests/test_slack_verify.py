@@ -10,8 +10,6 @@ import slack_verify
 
 
 def _run(coro):
-    """No pytest-asyncio/anyio plugin in this project's deps - drive the
-    coroutine directly instead of adding one just for these few tests."""
     return asyncio.run(coro)
 
 
