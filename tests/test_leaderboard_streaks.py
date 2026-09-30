@@ -1,8 +1,3 @@
-"""Streaks are computed in SQL (see queries.LeaderboardQueries.STREAKS), so these
-run get_leaderboard against a real in-memory sqlite3 connection. Puzzles and
-submissions are inserted directly to control post order, active and closed
-state without going through the save/close flows."""
-
 import sqlite3
 from contextlib import contextmanager
 from unittest.mock import MagicMock
@@ -63,7 +58,7 @@ def add_answers(conn, user_id, answers, active=True):
 
 
 def streaks(user_id):
-    entry = next(e for e in db.get_leaderboard() if e["user_id"] == user_id)
+    entry = next(e for e in db.get_leaderboard("2024-01") if e["user_id"] == user_id)
     return entry["current_streak"], entry["best_streak"]
 
 
@@ -131,8 +126,6 @@ def test_streaks_are_per_user(conn):
 
 
 def test_grace_only_covers_the_open_puzzle_not_an_earlier_miss(conn):
-    # Missed p2 (closed), p3 still open and unanswered: the open puzzle's grace
-    # doesn't reach back past a real miss.
     add_puzzles(conn, 3, open_={3})
     add_answers(conn, "alice", {1: True})
     assert streaks("alice") == (0, 1)
@@ -145,9 +138,6 @@ def test_correct_answer_on_open_puzzle_after_a_miss_starts_a_new_streak(conn):
 
 
 def test_wrong_answer_on_open_puzzle_keeps_the_streak_until_it_closes(conn):
-    # Known, accepted limitation: grace looks only at whether the latest puzzle
-    # is open, not at what the user submitted. The leaderboard posts after the
-    # reveal closes it, so the posted board is still right.
     add_puzzles(conn, 3, open_={3})
     add_answers(conn, "alice", {1: True, 2: True, 3: False})
     assert streaks("alice") == (2, 2)
@@ -157,8 +147,7 @@ def test_wrong_answer_on_open_puzzle_keeps_the_streak_until_it_closes(conn):
 
 
 def test_only_the_latest_puzzle_being_open_grants_grace(conn):
-    # Pre-migration-0009 puzzles were never closed (closed_at NULL). An old open
-    # puzzle mustn't grant grace once a newer, closed one exists.
+    # Pre-migration-0009 puzzles were never closed.
     add_puzzles(conn, 3, open_={1, 2})
     add_answers(conn, "alice", {1: True, 2: True})
     assert streaks("alice") == (0, 2)
@@ -207,14 +196,12 @@ def test_best_streak_can_be_in_the_past(conn):
 
 
 def test_post_order_decides_the_sequence_not_puzzle_id(conn):
-    # p2 was posted before p1 (e.g. p1 was queued earlier but posted later).
     for puzzle_id, day in (("p2", 1), ("p1", 2), ("p3", 3)):
         conn.execute(
             "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
             " VALUES (?, 'fen', '[]', 'random', ?, ?, 1, 'x')",
             (puzzle_id, f"2024-01-{day:02d}T12:00:00+00:00", f"2024-01-{day:02d}T12:00:00+00:00"),
         )
-    # Posted back to back (days 2 and 3); by puzzle_id they'd be p1, p3 with p2 between.
     add_answers(conn, "alice", {1: True, 3: True})
     assert streaks("alice") == (2, 2)
 
@@ -229,14 +216,14 @@ def test_bare_date_posted_at_from_old_rows_still_orders_correctly(conn):
 
 def test_empty_leaderboard(conn):
     add_puzzles(conn, 2)
-    assert db.get_leaderboard() == []
+    assert db.get_leaderboard("2024-01") == []
 
 
 def test_leaderboard_includes_everyone(conn):
     add_puzzles(conn, 1)
     for i in range(15):
         add_answers(conn, f"U{i}", {1: True})
-    assert len(db.get_leaderboard()) == 15
+    assert len(db.get_leaderboard("2024-01")) == 15
 
 
 def _entry(user_id, current_streak):
@@ -256,7 +243,6 @@ def slack_milestones(board):
 
 
 def table_lines(board):
-    """The player table's lines, from inside its code block."""
     return format_leaderboard(build_standings(board)).split("```")[1].strip("\n").splitlines()
 
 
@@ -320,14 +306,15 @@ def test_table_shows_a_dash_for_players_without_a_house():
 
 @pytest.fixture
 def post_leaderboard(monkeypatch):
-    """Calls /admin/leaderboard:send with the given board, returns the posted text."""
     monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
     post = MagicMock()
     monkeypatch.setattr(app_module.slack_client, "chat_postMessage", post)
 
     def run(board):
+        monkeypatch.setattr(db, "store_finished_months", lambda: None)
         monkeypatch.setattr(db, "is_holiday", lambda date: False)
-        monkeypatch.setattr(db, "get_leaderboard", lambda: board)
+        monkeypatch.setattr(db, "get_leaderboard_month", lambda: {"month": "2024-01", "final": False})
+        monkeypatch.setattr(db, "get_leaderboard", lambda month: board)
         response = TestClient(app_module.app).post(
             "/admin/leaderboard:send", headers={"Authorization": "Bearer s3cr3t"},
         )
@@ -338,15 +325,15 @@ def post_leaderboard(monkeypatch):
 
 
 def test_posted_leaderboard_separates_milestones_with_a_blank_line(post_leaderboard):
-    standings = build_standings([_entry("U1", 7)])
+    standings = build_standings([_entry("U1", 7)], "2024-01")
     assert post_leaderboard([_entry("U1", 7)]) == f"{format_leaderboard(standings)}\n\n{format_streak_milestones(standings)}"
 
 
 def test_posted_leaderboard_without_milestones_is_just_the_table(post_leaderboard):
-    assert post_leaderboard([_entry("U1", 2)]) == format_leaderboard(build_standings([_entry("U1", 2)]))
+    assert post_leaderboard([_entry("U1", 2)]) == format_leaderboard(build_standings([_entry("U1", 2)], "2024-01"))
 
 
 def test_posted_leaderboard_is_the_formatted_post(post_leaderboard):
     entry = _entry("U1", 7)
     entry["house_name"] = "Airbenders"
-    assert post_leaderboard([entry]) == format_leaderboard_post(build_standings([entry]))
+    assert post_leaderboard([entry]) == format_leaderboard_post(build_standings([entry], "2024-01"))

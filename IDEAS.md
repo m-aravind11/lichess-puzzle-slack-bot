@@ -6,6 +6,13 @@ Not scheduled - parked here so they don't get lost.
 Agreed design - replaces the current time-decayed `scoring.compute_score` and
 the all-time leaderboard. Fresh start: old points aren't carried over.
 
+Done already: the monthly leaderboard itself (months by puzzle `posted_at`,
+final standings on the 1st, all-time streaks) with the current per-puzzle
+scoring, and each finished month's board stored in `monthly_scores` (rank,
+points, correct, attempted, avg solve time - no house/best_streak), browsable
+on the web leaderboard. Still to do: the per-puzzle scoring and perfect-month
+bonus below.
+
 **Per puzzle**
 
 - Correctness: correct = 10, wrong = 0, whenever it's submitted (up to the

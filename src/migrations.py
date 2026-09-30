@@ -42,9 +42,7 @@ def _0003_add_slack_ts_to_puzzles(conn) -> None:
 
 
 def _0004_soft_delete_support_for_submissions(conn) -> None:
-    # Replaces the inline UNIQUE(puzzle_id, user_id) from migration 0002, which would
-    # block resubmission after a soft-delete (the deactivated row still occupies the
-    # unique slot), with a partial index that only constrains active rows.
+    # Partial unique index, so a soft-deleted row doesn't block resubmission.
     if "active" in _table_columns(conn, "submissions"):
         return
 
@@ -84,11 +82,7 @@ def _0006_add_score_to_submissions(conn) -> None:
 
 
 def _0007_add_puzzle_queue_to_puzzles(conn) -> None:
-    # Rebuilds puzzles so queued (not yet sent) puzzles can live in it: date
-    # becomes the nullable sent_on (NULL = still queued), which SQLite can't do
-    # with an in-place ALTER. sent_at orders puzzles by when they were actually
-    # posted, since rowid now reflects when they were added, not sent. Existing
-    # rows were all sent, so their date backfills sent_on, sent_at and created_at.
+    # Rebuilt because SQLite can't make a column nullable in place.
     if "sent_on" in _table_columns(conn, "puzzles"):
         return
 
@@ -116,12 +110,7 @@ def _0007_add_puzzle_queue_to_puzzles(conn) -> None:
 
 
 def _0008_simplify_puzzle_timestamps(conn) -> None:
-    # Collapses 0007's three time columns into two: added_at (when the row was
-    # created) and posted_at (when it went to Slack, NULL = queued). The puzzle's
-    # day is just posted_at's date, so sent_on goes. 0007 could only backfill
-    # the bare date; slack_ts is the Slack post's epoch time, so rows that have
-    # one get their real post time (the latest post, if the puzzle was resent).
-    # Pre-queue puzzles were fetched at send time, so added_at is that moment too.
+    # Rows with a slack_ts get their real post time from it; others keep the bare date.
     if "posted_at" in _table_columns(conn, "puzzles"):
         return
 
@@ -138,20 +127,12 @@ def _0008_simplify_puzzle_timestamps(conn) -> None:
 
 
 def _0009_add_closed_at_to_puzzles(conn) -> None:
-    # NULL = still accepting answers. Set when the solution is revealed in-thread
-    # (see PuzzleQueries.CLOSE_IF_OPEN), independent of whether a newer puzzle has
-    # been posted - lets the solution go up, and submissions stop, same-day.
     if "closed_at" not in _table_columns(conn, "puzzles"):
         conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN closed_at TEXT")
 
 
 def _0010_create_houses_tables(conn) -> None:
-    # A player with no active player_houses row is "not assigned". Players
-    # themselves aren't a table - they're whoever has submissions - so the
-    # answer-submission path stays a single write. Houses are never deleted, so
-    # house_id always resolves; NOCASE keeps "Gryffindor" and "gryffindor" from
-    # both existing. Assignments are soft-deleted like submissions: the partial
-    # unique index allows one active row per player, alongside any inactive ones.
+    # No players table: players are whoever has submissions, so answering stays one write.
     cur = conn.cursor()
     cur.execute("""
         CREATE TABLE IF NOT EXISTS houses (
@@ -175,14 +156,28 @@ def _0010_create_houses_tables(conn) -> None:
 
 
 def _0011_create_holidays_table(conn) -> None:
-    # One row per UTC date the daily puzzle is skipped (see
-    # LichessDailyPuzzle.handle_puzzle_generation_and_sending). Rows are
-    # hard-deleted, unlike puzzles/submissions/houses - nothing references a
-    # holiday, so there's no history to keep.
     conn.cursor().execute("""
         CREATE TABLE IF NOT EXISTS holidays (
             date TEXT PRIMARY KEY,
             added_at TEXT NOT NULL
+        )
+    """)
+
+
+def _0012_create_monthly_scores_table(conn) -> None:
+    # Written once when a month closes and never updated.
+    conn.cursor().execute("""
+        CREATE TABLE IF NOT EXISTS monthly_scores (
+            month TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            user_name TEXT,
+            rank INTEGER NOT NULL,
+            points INTEGER NOT NULL,
+            correct INTEGER NOT NULL,
+            attempted INTEGER NOT NULL,
+            avg_solve_seconds REAL,
+            stored_at TEXT NOT NULL,
+            PRIMARY KEY (month, user_id)
         )
     """)
 
@@ -199,6 +194,7 @@ MIGRATIONS = [
     ("0009_add_closed_at_to_puzzles", _0009_add_closed_at_to_puzzles),
     ("0010_create_houses_tables", _0010_create_houses_tables),
     ("0011_create_holidays_table", _0011_create_holidays_table),
+    ("0012_create_monthly_scores_table", _0012_create_monthly_scores_table),
 ]
 
 
@@ -210,9 +206,7 @@ def run_migrations(conn) -> None:
         )
     """)
 
-    # One round trip for every already-applied migration, not one per migration -
-    # each round trip to Turso is a fresh HTTPS/TLS handshake (no connection
-    # pooling at that layer), and this runs on every cold start.
+    # One query, not one per migration: each Turso round trip is a fresh TLS handshake.
     cur = conn.cursor()
     cur.execute("SELECT name FROM schema_migrations")
     applied = {row[0] for row in cur.fetchall()}

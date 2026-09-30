@@ -1,7 +1,3 @@
-"""GET /admin/leaderboard - the web leaderboard's data - against a real
-in-memory sqlite3 connection, so it's checked end to end against the same
-get_leaderboard() the Slack post uses."""
-
 import sqlite3
 from contextlib import contextmanager
 
@@ -73,6 +69,10 @@ def test_leaderboard_json_matches_the_slack_standings(client, conn):
     response = client.get("/admin/leaderboard", headers=AUTH)
     assert response.status_code == 200
     assert response.json() == {
+        "month": "2024-01",
+        "final": True,
+        "stored": False,
+        "months": ["2024-01"],
         "players": [
             {"rank": 1, "userName": "alice", "house": "Airbenders", "points": 30, "correct": 3, "attempted": 3,
              "avgSolveTime": "1m 30s", "currentStreak": 3, "bestStreak": 3},
@@ -90,7 +90,18 @@ def test_leaderboard_json_matches_the_slack_standings(client, conn):
 
 
 def test_leaderboard_json_when_nobody_has_played(client):
-    assert client.get("/admin/leaderboard", headers=AUTH).json() == {"players": [], "houses": [], "milestones": []}
+    assert client.get("/admin/leaderboard", headers=AUTH).json() == {
+        "month": "2024-01", "final": True, "stored": False, "months": ["2024-01"],
+        "players": [], "houses": [], "milestones": [],
+    }
+
+
+def test_leaderboard_json_before_any_puzzle_is_posted(client, conn):
+    conn.execute("DELETE FROM puzzles")
+    assert client.get("/admin/leaderboard", headers=AUTH).json() == {
+        "month": None, "final": False, "stored": False, "months": [],
+        "players": [], "houses": [], "milestones": [],
+    }
 
 
 @pytest.mark.parametrize("path,title", [("/leaderboard", "<title>Leaderboard"), ("/houses", "<title>Houses")])

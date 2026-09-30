@@ -6,8 +6,6 @@ import queries
 
 
 def _patch_connection(monkeypatch, rowcount: int, fetchone_result):
-    """Mocks the cursor reactivate_puzzle drives: rowcount from the conditional
-    UPDATE, and what the fallback SELECT (only reached when rowcount is 0) finds."""
     cur = MagicMock()
     cur.rowcount = rowcount
     cur.fetchone.return_value = fetchone_result

@@ -31,8 +31,6 @@ async def verify_slack_request(request: Request) -> bytes:
     ).hexdigest()
 
     if not hmac.compare_digest(computed_signature, slack_signature):
-        # Never log the signatures themselves - logging that they mismatched is
-        # enough to debug a signing-secret misconfiguration without leaking them.
         logger.warning("Rejected Slack request: signature mismatch")
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 

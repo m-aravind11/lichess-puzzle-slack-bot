@@ -33,8 +33,6 @@ def test_puzzle_sent_for_date_false_when_no_row(monkeypatch):
 
 
 def test_get_active_puzzle_by_date_returns_none_when_nothing_active(monkeypatch):
-    # Covers both "nothing sent today" and "today's puzzle was deactivated" -
-    # either way there's nothing live for a force resend to re-post.
     cur = _patch_connection(monkeypatch, fetchone_result=None)
     assert db.get_active_puzzle_by_date("2024-01-01") is None
     cur.execute.assert_called_once_with(queries.PuzzleQueries.GET_ACTIVE_BY_DATE, ("2024-01-01",))

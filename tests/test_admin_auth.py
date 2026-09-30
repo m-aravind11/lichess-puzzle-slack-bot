@@ -8,14 +8,12 @@ import app as app_module
 import db
 from constants import Security
 
-# What the Cloudflare cron calls - CRON_SECRET or ADMIN_SECRET.
 CRON_ROUTES = [
     ("POST", "/admin/dailyPuzzle:send"),
     ("POST", "/admin/puzzle:revealSolution"),
     ("POST", "/admin/leaderboard:send"),
 ]
 
-# Everything else - ADMIN_SECRET only.
 ADMIN_ROUTES = [
     ("POST", "/admin/migrations:run"),
     ("DELETE", "/admin/submissions/1"),
@@ -29,6 +27,7 @@ ADMIN_ROUTES = [
     ("PUT", "/admin/players/U1/house"),
     ("DELETE", "/admin/players/U1/house"),
     ("GET", "/admin/leaderboard"),
+    ("GET", "/admin/leaderboard/allTime"),
     ("GET", "/admin/holidays"),
     ("PUT", "/admin/holidays/2030-01-01"),
     ("DELETE", "/admin/holidays/2030-01-01"),
@@ -48,10 +47,10 @@ def client(monkeypatch):
 
 
 def block_handlers(monkeypatch):
-    """Makes every handler's underlying call fail loudly if a rejected request reaches it."""
     for name in (
         "init_db", "deactivate_submission", "deactivate_puzzle", "reactivate_puzzle", "close_previous_puzzle",
-        "get_leaderboard", "queue_puzzle", "list_puzzles", *HOUSE_DB_CALLS, *HOLIDAY_DB_CALLS,
+        "get_leaderboard", "get_leaderboard_month", "store_finished_months", "list_stored_months",
+        "get_stored_leaderboard", "get_all_time_leaderboard", "queue_puzzle", "list_puzzles", *HOUSE_DB_CALLS, *HOLIDAY_DB_CALLS,
     ):
         monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(app_module.lichess, "get_puzzle_by_id", MagicMock(side_effect=AssertionError("should not run")))
@@ -82,8 +81,6 @@ def test_auth_is_checked_before_the_handler_runs(client, method, path, monkeypat
 
 @pytest.mark.parametrize("method,path", ADMIN_ROUTES)
 def test_cron_secret_is_rejected_outside_the_cron_routes(client, method, path, monkeypatch):
-    # The cron's key opens only what the cron calls - a leaked copy can't
-    # delete submissions, rewrite houses or run migrations.
     block_handlers(monkeypatch)
     response = client.request(method, path, headers={"Authorization": "Bearer cr0n"})
     assert response.status_code == 401
@@ -182,14 +179,12 @@ def test_list_puzzles_rejects_an_unknown_state(client, monkeypatch):
 
 @pytest.mark.parametrize("method,path", ALL_ROUTES)
 def test_unset_secrets_fail_closed(method, path, monkeypatch):
-    # A misconfigured deploy (or an accidentally deleted env var) must reject
-    # every admin route, not wave every request through unauthenticated.
     monkeypatch.setattr(Security, "CRON_SECRET", None)
     monkeypatch.setattr(Security, "ADMIN_SECRET", None)
     block_handlers(monkeypatch)
     client = TestClient(app_module.app)
     assert client.request(method, path).status_code == 401
-    # "Bearer None" is what an unset secret would stringify to - it must not match either.
+    # What an unset secret would stringify to.
     assert client.request(method, path, headers={"Authorization": "Bearer None"}).status_code == 401
     assert client.request(method, path, headers={"Authorization": "Bearer "}).status_code == 401
 

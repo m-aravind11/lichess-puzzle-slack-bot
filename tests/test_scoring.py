@@ -13,22 +13,18 @@ def test_correct_answer_at_zero_elapsed_gets_max_score():
 
 
 def test_correct_answer_with_no_elapsed_time_gets_max_score():
-    # No slack_ts to measure against - give full credit rather than penalize
-    # for a measurement we don't have.
     assert compute_score(True, None) == MAX_SCORE
 
 
 @pytest.mark.parametrize("elapsed_seconds", [-1, -3600])
 def test_correct_answer_with_negative_elapsed_gets_max_score(elapsed_seconds):
-    # Negative elapsed is bogus data (e.g. puzzle's slack_ts overwritten by a
-    # later repost after this submission was recorded), not a real solve time.
     assert compute_score(True, elapsed_seconds) == MAX_SCORE
 
 
 @pytest.mark.parametrize("minutes,expected", [
     (0, 10),
     (9, 10),
-    (10, 9),        # boundary: right at a threshold drops to the next tier
+    (10, 9),
     (29, 9),
     (30, 8),
     (59, 8),
@@ -46,8 +42,8 @@ def test_correct_answer_with_negative_elapsed_gets_max_score(elapsed_seconds):
     (539, 2),
     (540, 1),
     (719, 1),
-    (720, 0),       # 12 hours out - no points left
-    (1440, 0),      # a full day out
+    (720, 0),
+    (1440, 0),
 ])
 def test_correct_answer_steps_down_with_elapsed_time(minutes, expected):
     assert compute_score(True, minutes * 60) == expected

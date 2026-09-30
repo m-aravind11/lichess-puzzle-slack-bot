@@ -1,35 +1,21 @@
 class PuzzleQueries:
-    # Includes queued puzzles - deactivating one just takes it out of the queue.
     GET_ACTIVE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 
-    # Posted only - what a submission is checked against. Keeping queued rows out
-    # also keeps them out of db._puzzle_cache until they've been posted.
+    # Posted only, which also keeps queued rows out of db._puzzle_cache.
     GET_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1 AND posted_at IS NOT NULL"
 
-    # Ignores active - only used to tell "no such puzzle" apart from "already active"
-    # after REACTIVATE's conditional update affects no row.
     GET_BY_ID_ANY_STATE = "SELECT 1 FROM puzzles WHERE puzzle_id = ?"
 
-    # A puzzle's day is the date part of posted_at (YYYY-MM-DD, UTC). Queued rows
-    # have no posted_at, so they never match.
-    #
-    # Ignores active - a puzzle deactivated after being posted still counts as
-    # "already posted today" for idempotency; only a force resend should bypass it.
+    # Ignores active: a puzzle deactivated after posting still counts as posted that day.
     EXISTS_FOR_DATE = "SELECT 1 FROM puzzles WHERE substr(posted_at, 1, 10) = ? LIMIT 1"
 
-    # Active only - the puzzle a force resend re-posts. A deactivated puzzle isn't
-    # resent (nothing live to resend), so the caller falls back to generating a
-    # fresh one in that case.
     GET_ACTIVE_BY_DATE = """
         SELECT * FROM puzzles WHERE substr(posted_at, 1, 10) = ? AND active = 1
         ORDER BY posted_at DESC, rowid DESC LIMIT 1
     """
 
-    # The puzzle whose solution the reveal cron posts: it runs the day after the
-    # puzzle went out, ahead of that day's new puzzle, so it looks strictly before
-    # today. Ignores active and closed_at - the caller checks those - so a
-    # retriggered reveal finds the same (already closed) puzzle and no-ops,
-    # instead of falling through to an older, never-closed one and revealing it.
+    # Ignores active and closed_at so a retried reveal finds the same, already
+    # closed puzzle and no-ops, rather than revealing an older one.
     GET_LATEST_POSTED_BEFORE_DATE = """
         SELECT * FROM puzzles WHERE posted_at IS NOT NULL AND substr(posted_at, 1, 10) < ?
         ORDER BY posted_at DESC, rowid DESC LIMIT 1
@@ -41,10 +27,7 @@ class PuzzleQueries:
         ON CONFLICT(puzzle_id) DO NOTHING
     """
 
-    # Inserts a freshly fetched puzzle as posted, or marks a queued one posted (and
-    # live again, in case it was deactivated while queued). An already-posted row
-    # is left untouched, so a resend of the same puzzle_id keeps its original post
-    # time and existing submissions stay timed against it.
+    # An already-posted row is left untouched, so a resend keeps its original post time.
     UPSERT_POSTED = """
         INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, slack_ts, active)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
@@ -55,7 +38,6 @@ class PuzzleQueries:
         WHERE puzzles.posted_at IS NULL
     """
 
-    # FIFO: the queue is posted in the order puzzles were added.
     GET_NEXT_QUEUED = """
         SELECT puzzle_id, fen, solution FROM puzzles
         WHERE posted_at IS NULL AND active = 1
@@ -79,9 +61,7 @@ class PuzzleQueries:
 
     UPDATE_SLACK_TS = "UPDATE puzzles SET slack_ts = ? WHERE puzzle_id = ?"
 
-    # Conditional on no active submissions existing for the puzzle, so the common
-    # case (safe to delete) is a single atomic round trip instead of a separate
-    # check-then-update that could race with a submission landing in between.
+    # One statement, so it can't race a submission landing in between.
     DEACTIVATE_IF_NO_ACTIVE_SUBMISSIONS = """
         UPDATE puzzles SET active = 0
         WHERE puzzle_id = ? AND active = 1
@@ -90,13 +70,11 @@ class PuzzleQueries:
 
     REACTIVATE = "UPDATE puzzles SET active = 1 WHERE puzzle_id = ? AND active = 0"
 
-    # No-op (rowcount 0) if already closed, so a retriggered cron doesn't re-post.
     CLOSE_IF_OPEN = "UPDATE puzzles SET closed_at = ? WHERE puzzle_id = ? AND closed_at IS NULL"
 
 
 class SubmissionQueries:
-    # No-op (rowcount 0) if the puzzle isn't active, posted, and still open;
-    # duplicate still raises IntegrityError via the partial unique index.
+    # A duplicate raises IntegrityError via the partial unique index.
     INSERT_IF_OPEN = """
         INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)
         SELECT ?, ?, ?, ?, ?, ?, ?, 1
@@ -109,29 +87,72 @@ class SubmissionQueries:
 
 
 class LeaderboardQueries:
+    # A submission counts toward its puzzle's month, substr(posted_at, 1, 7), not
+    # the month it was submitted in.
+    LATEST_PUZZLE = """
+        SELECT substr(posted_at, 1, 7) AS month, closed_at IS NULL AS is_open FROM puzzles
+        WHERE posted_at IS NOT NULL AND active = 1
+        ORDER BY posted_at DESC, rowid DESC LIMIT 1
+    """
+
     TOTALS = """
-        SELECT user_id, MAX(user_name) AS user_name,
-               COUNT(*) AS attempted, SUM(correct) AS correct,
-               COUNT(*) - SUM(correct) AS incorrect, SUM(score) AS score
-        FROM submissions
-        WHERE active = 1
-        GROUP BY user_id
+        SELECT s.user_id, MAX(s.user_name) AS user_name,
+               COUNT(*) AS attempted, SUM(s.correct) AS correct,
+               COUNT(*) - SUM(s.correct) AS incorrect, SUM(s.score) AS score
+        FROM submissions s
+        JOIN puzzles p ON p.puzzle_id = s.puzzle_id
+        WHERE s.active = 1 AND substr(p.posted_at, 1, 7) = ?
+        GROUP BY s.user_id
     """
 
     SOLVE_TIMES = """
         SELECT s.user_id, s.submitted_at, p.slack_ts
         FROM submissions s
         JOIN puzzles p ON p.puzzle_id = s.puzzle_id
-        WHERE s.active = 1 AND s.correct = 1 AND p.slack_ts IS NOT NULL
+        WHERE s.active = 1 AND s.correct = 1 AND p.slack_ts IS NOT NULL AND substr(p.posted_at, 1, 7) = ?
     """
 
-    # A streak is consecutive correct answers over posted, active puzzles - not
-    # calendar days - so a day nothing was posted, or a deactivated puzzle, leaves
-    # no gap. seq numbers those puzzles in post order; within a user's wins,
-    # n - ROW_NUMBER() is constant across an unbroken run (gaps-and-islands), so
-    # grouping by it yields each run. A run is current if it reaches the latest
-    # puzzle - or the one before, while the latest is still open and the user may
-    # not have answered it yet. Users with no correct answers get no row.
+    UNSTORED_MONTHS_BEFORE = """
+        SELECT DISTINCT substr(p.posted_at, 1, 7) AS month
+        FROM submissions s
+        JOIN puzzles p ON p.puzzle_id = s.puzzle_id
+        WHERE s.active = 1 AND substr(p.posted_at, 1, 7) < ?
+          AND substr(p.posted_at, 1, 7) NOT IN (SELECT month FROM monthly_scores)
+        ORDER BY month
+    """
+
+    # {rows} is one STORE_MONTH_ROW per player.
+    STORE_MONTH = """
+        INSERT INTO monthly_scores
+            (month, user_id, user_name, rank, points, correct, attempted, avg_solve_seconds, stored_at)
+        VALUES {rows}
+        ON CONFLICT(month, user_id) DO NOTHING
+    """
+    STORE_MONTH_ROW = "(?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
+    STORED_MONTHS = "SELECT DISTINCT month FROM monthly_scores ORDER BY month DESC"
+
+    STORED_MONTH = """
+        SELECT user_id, user_name, attempted, correct, attempted - correct AS incorrect,
+               points AS score, avg_solve_seconds
+        FROM monthly_scores
+        WHERE month = ?
+        ORDER BY rank
+    """
+
+    # user_name comes from the latest month, in case it changed.
+    ALL_TIME = """
+        SELECT m.user_id,
+               (SELECT l.user_name FROM monthly_scores l WHERE l.user_id = m.user_id
+                ORDER BY l.month DESC LIMIT 1) AS user_name,
+               SUM(m.points) AS score, SUM(m.correct) AS correct, SUM(m.attempted) AS attempted,
+               COUNT(*) AS months
+        FROM monthly_scores m
+        GROUP BY m.user_id
+    """
+
+    # Gaps-and-islands over active posted puzzles in post order. A run is current
+    # if it reaches the latest puzzle, or the one before while the latest is open.
     STREAKS = """
         WITH seq AS (
             SELECT puzzle_id, closed_at,
@@ -157,10 +178,8 @@ class LeaderboardQueries:
         GROUP BY r.user_id
     """
 
-    # Each player's house - get_leaderboard tags each entry with it. Includes
-    # soft-deleted mappings: a player who left the company still counts toward
-    # their house's score. Houses never change, but a player who rejoined has
-    # more than one row, so take their latest.
+    # Includes soft-deleted rows so leavers still count for their house; a
+    # rejoiner's latest row wins.
     HOUSE_MEMBERS = """
         SELECT ph.user_id, h.name AS house_name
         FROM player_houses ph JOIN houses h ON h.id = ph.house_id
@@ -178,13 +197,10 @@ class HouseQueries:
 
     EXISTS = "SELECT 1 FROM houses WHERE id = ?"
 
-    # No row back if the name is taken (names are unique, case-insensitively).
     INSERT = "INSERT INTO houses (name) VALUES (?) ON CONFLICT(name) DO NOTHING RETURNING id"
 
 
 class PlayerQueries:
-    # Players are whoever has an active submission; unassigned ones first, since
-    # those are the ones that need attention.
     LIST = """
         SELECT s.user_id, MAX(s.user_name) AS user_name, MAX(ph.house_id) AS house_id
         FROM submissions s
@@ -198,9 +214,7 @@ class PlayerQueries:
 
     GET_HOUSE = "SELECT house_id FROM player_houses WHERE user_id = ? AND active = 1"
 
-    # No-op (rowcount 0) if the player already has an active assignment. The
-    # conflict target names the partial unique index's WHERE, so inactive
-    # (soft-deleted) rows don't block a new one.
+    # The conflict target repeats the partial index's WHERE, so soft-deleted rows don't block.
     ASSIGN = """
         INSERT INTO player_houses (user_id, house_id, assigned_at, active) VALUES (?, ?, ?, 1)
         ON CONFLICT(user_id) WHERE active = 1 DO NOTHING
@@ -210,12 +224,10 @@ class PlayerQueries:
 
 
 class HolidayQueries:
-    # date is YYYY-MM-DD (UTC), the same day format as substr(posted_at, 1, 10).
     LIST = "SELECT date FROM holidays ORDER BY date"
 
     EXISTS = "SELECT 1 FROM holidays WHERE date = ?"
 
-    # Idempotent: re-adding a holiday is a no-op, so a range can be re-submitted.
     INSERT = "INSERT INTO holidays (date, added_at) VALUES (?, ?) ON CONFLICT(date) DO NOTHING"
 
     DELETE = "DELETE FROM holidays WHERE date = ?"

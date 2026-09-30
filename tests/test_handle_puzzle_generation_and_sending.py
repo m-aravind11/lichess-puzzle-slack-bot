@@ -25,8 +25,6 @@ EXISTING = {
 
 
 def _run(coro):
-    """No pytest-asyncio/anyio plugin in this project's deps - drive the
-    coroutine directly instead of adding one just for these few tests."""
     return asyncio.run(coro)
 
 
@@ -77,7 +75,6 @@ def test_force_resends_the_existing_puzzle_without_fetching_a_new_one(monkeypatc
 
 
 def test_force_with_nothing_active_falls_back_to_generating_fresh(monkeypatch):
-    # e.g. today's puzzle was deactivated - nothing live left to resend.
     lichess = _lichess(monkeypatch, existing_active=None)
 
     _run(lichess.handle_puzzle_generation_and_sending(force=True))

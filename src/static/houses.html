@@ -8,7 +8,6 @@
 <link rel="icon" href="/static/favicon.png" type="image/png" sizes="64x64">
 <link rel="stylesheet" href="/static/admin.css">
 <style>
-  /* ---- houses: a quiet strip, since they rarely change ---- */
   .houses { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; align-items: center; }
   .chip-add {
     background: transparent;
@@ -25,14 +24,12 @@
   .add-house button { padding: 5px 12px; font-size: 0.85rem; border-radius: 999px; }
   .add-house .cancel { background: transparent; color: var(--muted); font-weight: 500; }
 
-  /* ---- players ---- */
   .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
   .toolbar input { flex: 1; }
   .toolbar select { width: 170px; }
   .summary { color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
   .summary strong { color: var(--warn); font-weight: 600; }
 
-  /* One grid for every row, so names, houses and actions line up in columns. */
   .player {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 180px 28px;
@@ -110,7 +107,7 @@
 <script src="/static/admin.js"></script>
 <script>
   (function () {
-    // houseFilter: '' = all houses, 'none' = unassigned, otherwise a house id.
+    // houseFilter: '' = all, 'none' = unassigned, otherwise a house id.
     var state = { houses: [], players: [], adding: false, houseFilter: '' };
 
     var api = Admin.api, el = Admin.el, toast = Admin.toast;
@@ -208,7 +205,6 @@
         opt.value = pair[0];
         select.appendChild(opt);
       });
-      // A house filter can outlive its house only in theory (houses aren't deleted), but don't strand the view.
       if (state.houseFilter && state.houseFilter !== 'none' && !houseById(parseInt(state.houseFilter, 10))) state.houseFilter = '';
       select.value = state.houseFilter;
     }
@@ -292,7 +288,6 @@
         render();
       }).catch(function (err) {
         toast(err.message, true);
-        // Most likely assigned from somewhere else in the meantime - show the real state.
         load().catch(function () {});
       });
     }

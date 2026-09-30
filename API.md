@@ -148,19 +148,72 @@ the web leaderboard renders. Both come from `standings.build_standings()`;
 the Slack post and this route only lay it out differently, so they always
 agree.
 
+Standings are monthly: they cover the UTC calendar month of the latest
+posted puzzle, and a submission counts toward its puzzle's month (the last
+day's puzzle answered on the 1st counts for the month it was posted in).
+So on the 1st, after the reveal and before that month's first puzzle, it
+shows the month just ended as final. Streaks aren't monthly - they carry
+across months.
+
+**Query params**
+
+- `month` (optional): `YYYY-MM` of an earlier month, to get its stored board
+  (see `/admin/leaderboard:send`) - frozen as it was when the month closed.
+  The latest month, or no `month`, gets the live board.
+
 **Responses**
 
 - `200`:
+  - `month`: `YYYY-MM` the standings are for, `null` before any puzzle has
+    been posted
+  - `final`: `true` once the month is over and its last puzzle has closed
+    (always `true` for a stored month)
+  - `stored`: `true` for an earlier month's stored board
+  - `months`: every month with a board - the stored ones plus the latest -
+    newest first, for picking one
   - `players`: ranked array of `{rank, userName, house, points, correct,
-    attempted, avgSolveTime, currentStreak, bestStreak}`. `house` is `null`
-    if never assigned; `avgSolveTime` is pre-formatted (e.g. `1m 30s`, `-`).
-  - `houses`: ranked array of `{rank, name, points, correct, players}`
+    attempted, avgSolveTime, currentStreak, bestStreak}` - everyone who
+    answered a puzzle that month. `points`, `correct`, `attempted` and
+    `avgSolveTime` are the month's only (all-time is its own route, below).
+    `house` is `null` if never assigned; `avgSolveTime` is pre-formatted
+    (e.g. `1m 30s`, `-`). `currentStreak` and `bestStreak` are `null` on a
+    stored month.
+  - `houses`: ranked array of `{rank, name, points, correct, players}`, from
+    this month's points
   - `milestones`: `{streak, players}` for each streak milestone hit today,
-    longest first, with `players` as display names
+    longest first, with `players` as display names (empty on a stored month)
+- `400`: `month` isn't `YYYY-MM`
+- `401`: bad/missing bearer token
+- `404`: no stored board for `month`
+
+```
+curl "https://.../admin/leaderboard?month=2026-09" \
+  -H "Authorization: Bearer $ADMIN_SECRET"
+```
+
+---
+
+## `GET /admin/leaderboard/allTime`
+
+The all-time standings `/admin/leaderboard:send` posts once a month, as
+JSON - every stored (finished) month added up per player. The month in
+progress isn't included until it's stored.
+
+**Responses**
+
+- `200`:
+  - `through`: `YYYY-MM` of the latest stored month, `null` before any
+    month is stored
+  - `months`: as in `GET /admin/leaderboard`, for the web month picker
+  - `players`: array of `{rank, userName, house, points, correct,
+    attempted, months}`, ranked by points, then more correct answers, then
+    name. `months` is how many months they played.
+  - `houses`: ranked array of `{rank, name, points, correct, players}`, from
+    all-time points
 - `401`: bad/missing bearer token
 
 ```
-curl "https://.../admin/leaderboard" \
+curl "https://.../admin/leaderboard/allTime" \
   -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 
@@ -168,11 +221,24 @@ curl "https://.../admin/leaderboard" \
 
 ## `POST /admin/leaderboard:send`
 
-Posts current standings to the Slack channel - the player table (with each
-player's house), streak milestones, then house standings (omitted while
-nobody is in a house).
+Posts the month's standings (see `GET /admin/leaderboard`) to the Slack
+channel - the player table (with each player's house), streak milestones,
+then house standings (omitted while nobody is in a house). Titled
+"Leaderboard - September 2026", or "Final standings - September 2026" on the
+first run after the month's last puzzle closes. That run also posts the
+all-time standings (see `GET /admin/leaderboard/allTime`) as a second,
+separate message - so all-time goes out once a month, with no cron of its
+own, and always includes the month that just closed.
 No-ops (still `200`) if today is a holiday (it's only posted on puzzle days),
-or if the leaderboard is empty (nobody has submitted anything yet).
+or if the leaderboard is empty (nobody has answered this month's puzzles yet).
+
+First, even on a holiday, it stores the board of every finished month not
+stored yet in the `monthly_scores` table - each player's rank, points,
+correct and attempted count, and average solve time. A month is finished
+once it's over and its last puzzle has closed. A month is stored once and
+never rewritten, so a retry is safe and later changes (e.g. a deleted
+submission) don't alter it. The first run after deploying stores every
+earlier month at once.
 
 **Responses**
 
