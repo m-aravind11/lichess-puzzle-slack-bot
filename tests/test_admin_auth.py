@@ -50,6 +50,7 @@ def block_handlers(monkeypatch):
     for name in (
         "init_db", "deactivate_submission", "deactivate_puzzle", "reactivate_puzzle", "close_previous_puzzle",
         "get_leaderboard", "get_leaderboard_month", "store_finished_months", "list_stored_months",
+        "list_unannounced_months", "mark_months_announced",
         "get_stored_leaderboard", "get_all_time_leaderboard", "queue_puzzle", "list_puzzles", *HOUSE_DB_CALLS, *HOLIDAY_DB_CALLS,
     ):
         monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))

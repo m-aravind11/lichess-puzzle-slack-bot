@@ -132,6 +132,14 @@ class LeaderboardQueries:
 
     STORED_MONTHS = "SELECT DISTINCT month FROM monthly_scores ORDER BY month DESC"
 
+    UNANNOUNCED_MONTHS = """
+        SELECT DISTINCT month FROM monthly_scores
+        WHERE month NOT IN (SELECT month FROM announced_months)
+        ORDER BY month
+    """
+
+    MARK_ANNOUNCED = "INSERT INTO announced_months (month, announced_at) VALUES (?, ?) ON CONFLICT(month) DO NOTHING"
+
     STORED_MONTH = """
         SELECT user_id, user_name, attempted, correct, attempted - correct AS incorrect,
                points AS score, avg_solve_seconds
@@ -152,7 +160,8 @@ class LeaderboardQueries:
     """
 
     # Gaps-and-islands over active posted puzzles in post order. A run is current
-    # if it reaches the latest puzzle, or the one before while the latest is open.
+    # if it reaches the latest puzzle, or the one before while the latest is open
+    # and unanswered (one answer per puzzle, so a wrong one already broke it).
     STREAKS = """
         WITH seq AS (
             SELECT puzzle_id, closed_at,
@@ -169,12 +178,18 @@ class LeaderboardQueries:
             SELECT user_id, COUNT(*) AS len, MAX(n) AS last_n FROM wins GROUP BY user_id, run
         ),
         latest AS (
-            SELECT n, closed_at IS NULL AS is_open FROM seq ORDER BY n DESC LIMIT 1
+            SELECT n, puzzle_id, closed_at IS NULL AS is_open FROM seq ORDER BY n DESC LIMIT 1
+        ),
+        answered_latest AS (
+            SELECT DISTINCT s.user_id FROM submissions s JOIN latest l ON l.puzzle_id = s.puzzle_id
+            WHERE s.active = 1
         )
         SELECT r.user_id,
                MAX(r.len) AS best_streak,
-               COALESCE(MAX(CASE WHEN r.last_n >= l.n - l.is_open THEN r.len END), 0) AS current_streak
+               COALESCE(MAX(CASE WHEN r.last_n >= l.n - (l.is_open AND a.user_id IS NULL) THEN r.len END), 0)
+                   AS current_streak
         FROM runs r CROSS JOIN latest l
+        LEFT JOIN answered_latest a ON a.user_id = r.user_id
         GROUP BY r.user_id
     """
 

@@ -26,7 +26,8 @@ Each person gets their result by DM, and a leaderboard keeps score.
 - **Monthly standings.** Points start afresh each calendar month; a puzzle
   counts toward the month it was posted in. On the 1st the leaderboard posts
   the final standings of the month just ended, followed by a separate
-  all-time leaderboard (every finished month added up). Every finished
+  all-time leaderboard (every finished month added up); if that run is
+  missed, the next one catches up. Every finished
   month's board is stored, and the web leaderboard lets you browse past
   months and the all-time standings. Streaks carry across months.
 - **Houses.** Players can be grouped into teams that compete on a house

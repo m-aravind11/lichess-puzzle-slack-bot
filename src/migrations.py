@@ -182,6 +182,16 @@ def _0012_create_monthly_scores_table(conn) -> None:
     """)
 
 
+def _0013_create_announced_months_table(conn) -> None:
+    # Not backfilled: months already stored but never posted get their final post on the next run.
+    conn.cursor().execute("""
+        CREATE TABLE IF NOT EXISTS announced_months (
+            month TEXT PRIMARY KEY,
+            announced_at TEXT NOT NULL
+        )
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -195,6 +205,7 @@ MIGRATIONS = [
     ("0010_create_houses_tables", _0010_create_houses_tables),
     ("0011_create_holidays_table", _0011_create_holidays_table),
     ("0012_create_monthly_scores_table", _0012_create_monthly_scores_table),
+    ("0013_create_announced_months_table", _0013_create_announced_months_table),
 ]
 
 

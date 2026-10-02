@@ -224,13 +224,18 @@ curl "https://.../admin/leaderboard/allTime" \
 Posts the month's standings (see `GET /admin/leaderboard`) to the Slack
 channel - the player table (with each player's house), streak milestones,
 then house standings (omitted while nobody is in a house). Titled
-"Leaderboard - September 2026", or "Final standings - September 2026" on the
-first run after the month's last puzzle closes. That run also posts the
-all-time standings (see `GET /admin/leaderboard/allTime`) as a second,
-separate message - so all-time goes out once a month, with no cron of its
-own, and always includes the month that just closed.
+"Leaderboard - September 2026".
+
+Before that, every stored month not yet posted gets its "Final standings -
+September 2026" message (from the stored board, so no streaks), followed by
+the all-time standings (see `GET /admin/leaderboard/allTime`) as a separate
+message - so all-time goes out once a month, with no cron of its own. Posted
+months are recorded in the `announced_months` table. This is normally the
+run on the 1st, but if that run fails or is skipped, the next successful run
+catches up. A month that has ended but whose last puzzle is still open gets
+no live post.
 No-ops (still `200`) if today is a holiday (it's only posted on puzzle days),
-or if the leaderboard is empty (nobody has answered this month's puzzles yet).
+or if there's nothing to post (nobody has answered this month's puzzles yet).
 
 First, even on a holiday, it stores the board of every finished month not
 stored yet in the `monthly_scores` table - each player's rank, points,

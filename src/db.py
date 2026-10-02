@@ -337,6 +337,23 @@ def list_stored_months() -> list:
 
 
 @_retry_stale_connection
+def list_unannounced_months() -> list:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(LeaderboardQueries.UNANNOUNCED_MONTHS)
+        return [row[0] for row in cur.fetchall()]
+
+
+@_retry_stale_connection
+def mark_months_announced(months: list) -> None:
+    now = _now()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        for month in months:
+            cur.execute(LeaderboardQueries.MARK_ANNOUNCED, (month, now))
+
+
+@_retry_stale_connection
 def get_stored_leaderboard(month: str) -> list | None:
     """None if the month isn't stored."""
     with get_connection() as conn:

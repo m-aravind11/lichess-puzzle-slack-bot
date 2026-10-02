@@ -81,7 +81,7 @@ def format_leaderboard(standings: dict) -> str:
             str(p["points"]),
             f"{p['correct']}/{p['attempted']}",
             format_seconds(p["avg_solve_seconds"]),
-            str(p["current_streak"]),
+            "-" if p["current_streak"] is None else str(p["current_streak"]),
         ]
         for p in standings["players"]
     ]
