@@ -212,8 +212,27 @@ async def send_leaderboard():
             logger.info("admin/leaderboard:send: %s is a holiday, skipping", date_str)
             return Response(status_code=200)
 
+        # Driven by what's stored, not the latest puzzle, so a missed run on the 1st catches up later.
+        finished_months = db.list_unannounced_months()
+        for month in finished_months:
+            slack_client.chat_postMessage(
+                channel=lichess.SLACK_CHANNEL_ID,
+                text=format_leaderboard_post(build_standings(db.get_stored_leaderboard(month), month, final=True)),
+            )
+        if finished_months:
+            slack_client.chat_postMessage(
+                channel=lichess.SLACK_CHANNEL_ID,
+                text=format_all_time_leaderboard_post(
+                    build_all_time_standings(db.get_all_time_leaderboard(), finished_months[-1])
+                ),
+            )
+            db.mark_months_announced(finished_months)
+
+        # A final month is stored, so it was posted above or on an earlier run.
         leaderboard_month = db.get_leaderboard_month()
-        board = db.get_leaderboard(leaderboard_month["month"]) if leaderboard_month else []
+        if not leaderboard_month or leaderboard_month["final"]:
+            return Response(status_code=200)
+        board = db.get_leaderboard(leaderboard_month["month"])
         if not board:
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
@@ -222,15 +241,6 @@ async def send_leaderboard():
             channel=lichess.SLACK_CHANNEL_ID,
             text=format_leaderboard_post(build_standings(board, **leaderboard_month)),
         )
-
-        # final implies the month was just stored, so all-time includes it.
-        if leaderboard_month["final"]:
-            slack_client.chat_postMessage(
-                channel=lichess.SLACK_CHANNEL_ID,
-                text=format_all_time_leaderboard_post(
-                    build_all_time_standings(db.get_all_time_leaderboard(), leaderboard_month["month"])
-                ),
-            )
     except Exception:
         logger.exception("admin/leaderboard:send failed")
         raise

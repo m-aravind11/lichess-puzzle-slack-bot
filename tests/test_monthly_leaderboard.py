@@ -291,7 +291,9 @@ def test_month_rollover_end_to_end(conn, now, send):
     answer(conn, "U1", "sep29", 10)
     answer(conn, "U1", "sep30", 9)
     answer(conn, "U2", "sep29", 4)
-    [text] = send()
+    aug, aug_all_time, text = send()
+    assert aug.startswith("*Final standings - August 2026*")
+    assert aug_all_time.startswith("*All-time standings - through August 2026*")
     assert text.startswith("*Leaderboard - September 2026*")
 
     # Oct 1: the reveal has closed Sep 30's puzzle.
@@ -313,10 +315,38 @@ def test_month_rollover_end_to_end(conn, now, send):
 
 def test_month_nobody_answered_posts_nothing_not_even_all_time(conn, now, send):
     post(conn, "aug", "2026-08-31")
-    post(conn, "sep30", "2026-09-30")
     answer(conn, "U1", "aug", 10)
+    db.store_finished_months()
+    db.mark_months_announced(["2026-08"])
+    post(conn, "sep30", "2026-09-30")
     assert send() == []
     assert stored(conn) == [("2026-08", "U1", 10, 1, 1)]
+
+
+def test_missed_run_on_the_1st_posts_the_final_standings_on_the_next_run(conn, now, send):
+    post(conn, "sep30", "2026-09-30")
+    answer(conn, "U1", "sep30", 10)
+    post(conn, "oct1", "2026-10-01", open_=True)
+    answer(conn, "U1", "oct1", 7)
+
+    monthly, all_time_text, text = send()
+    assert monthly.startswith("*Final standings - September 2026*")
+    assert all_time_text.startswith("*All-time standings - through September 2026*")
+    assert text.startswith("*Leaderboard - October 2026*")
+
+
+def test_announced_month_is_not_posted_again(conn, now, send):
+    post(conn, "sep30", "2026-09-30")
+    answer(conn, "U1", "sep30", 10)
+    assert len(send()) == 2
+    assert send() == []
+
+
+def test_final_standings_have_no_streaks(conn, now, send):
+    post(conn, "sep30", "2026-09-30")
+    answer(conn, "U1", "sep30", 10)
+    monthly, _ = send()
+    assert monthly.split("\n")[4].split()[-1] == "-"
 
 
 def test_holiday_on_the_1st_delays_both_posts_to_the_next_run(conn, now, send, monkeypatch):

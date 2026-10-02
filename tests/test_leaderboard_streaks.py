@@ -137,13 +137,20 @@ def test_correct_answer_on_open_puzzle_after_a_miss_starts_a_new_streak(conn):
     assert streaks("alice") == (1, 1)
 
 
-def test_wrong_answer_on_open_puzzle_keeps_the_streak_until_it_closes(conn):
+def test_wrong_answer_on_open_puzzle_ends_the_streak_right_away(conn):
     add_puzzles(conn, 3, open_={3})
     add_answers(conn, "alice", {1: True, 2: True, 3: False})
-    assert streaks("alice") == (2, 2)
+    assert streaks("alice") == (0, 2)
 
     conn.execute("UPDATE puzzles SET closed_at = 'x' WHERE puzzle_id = 'p3'")
     assert streaks("alice") == (0, 2)
+
+
+def test_deactivated_wrong_answer_on_open_puzzle_restores_the_grace(conn):
+    add_puzzles(conn, 3, open_={3})
+    add_answers(conn, "alice", {1: True, 2: True})
+    add_answers(conn, "alice", {3: False}, active=False)
+    assert streaks("alice") == (2, 2)
 
 
 def test_only_the_latest_puzzle_being_open_grants_grace(conn):
@@ -313,6 +320,7 @@ def post_leaderboard(monkeypatch):
     def run(board):
         monkeypatch.setattr(db, "store_finished_months", lambda: None)
         monkeypatch.setattr(db, "is_holiday", lambda date: False)
+        monkeypatch.setattr(db, "list_unannounced_months", lambda: [])
         monkeypatch.setattr(db, "get_leaderboard_month", lambda: {"month": "2024-01", "final": False})
         monkeypatch.setattr(db, "get_leaderboard", lambda month: board)
         response = TestClient(app_module.app).post(
