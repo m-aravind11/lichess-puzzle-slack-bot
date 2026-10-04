@@ -16,8 +16,17 @@ from constants import SlackActions
 logger = logging.getLogger(__name__)
 
 class Constants:
-    # difficulty=easier keeps puzzles around 1150-1300 rating.
-    PUZZLE_THEMES = ("mateIn2", "mateIn3")
+    # difficulty=easier keeps puzzles around 1150-1300 rating; rare patterns ignore it.
+    MATE_LENGTH_THEMES = ("mateIn2", "mateIn3")
+    # Patterns come in any mate length and the API takes one angle, so a few refetches
+    # make mate in 2/3 likely; an occasional mate in 1 or 4 still gets through.
+    MATE_PATTERN_THEMES = (
+        "anastasiaMate", "arabianMate", "backRankMate", "balestraMate", "blindSwineMate",
+        "bodenMate", "cornerMate", "doubleBishopMate", "dovetailMate", "epauletteMate",
+        "hookMate", "killBoxMate", "morphysMate", "operaMate", "pillsburysMate",
+        "smotheredMate", "swallowstailMate", "triangleMate", "vukovicMate",
+    )
+    PATTERN_FETCH_ATTEMPTS = 3
     LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty=easier"
     LICHESS_PUZZLE_BY_ID_URL = "https://lichess.org/api/puzzle/{puzzle_id}"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
@@ -46,9 +55,16 @@ class LichessDailyPuzzle:
                     raise
                 time.sleep(Constants.FETCH_RETRY_DELAY_SECONDS)
 
-    def get_random_puzzle(self) -> dict:
-        theme = random.choice(Constants.PUZZLE_THEMES)
+    def _fetch_random_puzzle(self, theme: str) -> dict:
         return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL.format(theme=theme))
+
+    def get_random_puzzle(self) -> dict:
+        theme = random.choice(Constants.MATE_LENGTH_THEMES + Constants.MATE_PATTERN_THEMES)
+        for _ in range(Constants.PATTERN_FETCH_ATTEMPTS):
+            puzzle = self._fetch_random_puzzle(theme)
+            if set(puzzle['puzzle']['themes']) & set(Constants.MATE_LENGTH_THEMES):
+                break
+        return puzzle
 
     def get_puzzle_by_id(self, puzzle_id: str) -> dict:
         return self._fetch_json_with_retries(Constants.LICHESS_PUZZLE_BY_ID_URL.format(puzzle_id=puzzle_id))
@@ -87,40 +103,55 @@ class LichessDailyPuzzle:
             board.push(move)
         return san_moves
 
-    def _normalize_san_token(self, token: str) -> str:
+    def _parse_submitted_move(self, board, token: str) -> chess.Move:
         token = token.strip().replace('*', 'x')
         lowered = token.lower()
         if lowered in ('o-o', '0-0'):
-            return 'O-O'
+            return board.parse_san('O-O')
         if lowered in ('o-o-o', '0-0-0'):
-            return 'O-O-O'
-        token = lowered
-        if token and token[0] in 'kqrbn':
-            token = token[0].upper() + token[1:]
-        return token
+            return board.parse_san('O-O-O')
+        if lowered[:1] in ('k', 'q', 'r', 'n'):
+            return board.parse_san(lowered[0].upper() + lowered[1:])
+        if lowered[:1] != 'b':
+            return board.parse_san(lowered)
+
+        # 'b' is both the bishop and the b-file, so the typed case only decides
+        # when both readings are legal (e.g. bxc3 vs Bxc3).
+        as_pawn, as_bishop = lowered, 'B' + lowered[1:]
+        preferred, fallback = (as_bishop, as_pawn) if token[0] == 'B' else (as_pawn, as_bishop)
+        try:
+            return board.parse_san(preferred)
+        except ValueError:
+            return board.parse_san(fallback)
 
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
-        # Only the player's moves are submitted; opponent replies come from the
-        # solution, since Lichess records just one of possibly several valid ones.
-        expected_player_move_count = len(san_solution[0::2])
-        if len(submitted_moves) != expected_player_move_count:
-            return False
-
+        # san_solution alternates player move / opponent reply. Users submit only their
+        # own moves; replies are replayed from the solution, since Lichess records just
+        # one of possibly several valid replies.
+        player_moves = san_solution[0::2]
+        opponent_replies = san_solution[1::2]
         board = self.get_board_from_fen(fen)
-        submitted_iter = iter(submitted_moves)
         try:
-            for ply, san in enumerate(san_solution):
-                solution_move = board.parse_san(san)
-                if ply % 2 == 0:
-                    token = next(submitted_iter)
-                    submitted_move = board.parse_san(self._normalize_san_token(token))
-                    if submitted_move != solution_move:
-                        return False
-                board.push(solution_move)
+            for turn, expected_san in enumerate(player_moves):
+                if turn >= len(submitted_moves):
+                    return False
+                expected = board.parse_san(expected_san)
+                submitted = self._parse_submitted_move(board, submitted_moves[turn])
+
+                if submitted != expected:
+                    # Like Lichess, a different move that mates on the spot also solves it,
+                    # as long as nothing was submitted after it.
+                    board.push(submitted)
+                    is_last_submitted = turn == len(submitted_moves) - 1
+                    return board.is_checkmate() and is_last_submitted
+
+                board.push(expected)
+                if turn < len(opponent_replies):
+                    board.push_san(opponent_replies[turn])
         except (chess.InvalidMoveError, chess.IllegalMoveError, chess.AmbiguousMoveError):
             return False
 
-        return True
+        return len(submitted_moves) == len(player_moves)
 
     def encode_fen_for_url(self,fen: str) -> str:
         return fen.replace("/", "%2F").replace(" ", "%20")
