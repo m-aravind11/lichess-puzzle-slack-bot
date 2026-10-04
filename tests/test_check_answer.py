@@ -68,6 +68,33 @@ def test_queenside_castling_case_and_digit_variants(submitted):
     assert lp.check_answer(fen, ["O-O-O"], [submitted])
 
 
+PAWN_ONLY_TAKES_C3_FEN = "4k3/8/8/8/8/2n5/1P6/4K3 w - - 0 1"
+BISHOP_ONLY_TAKES_C3_FEN = "4k3/8/8/8/8/2n5/3B4/4K3 w - - 0 1"
+PAWN_AND_BISHOP_TAKE_C3_FEN = "4k3/8/8/8/8/2n5/1P1B4/4K3 w - - 0 1"
+
+
+@pytest.mark.parametrize("submitted", ["bxc3", "Bxc3"])
+def test_b_file_pawn_capture_accepted_in_either_case_when_no_bishop_can(submitted):
+    assert lp.check_answer(PAWN_ONLY_TAKES_C3_FEN, ["bxc3"], [submitted])
+
+
+@pytest.mark.parametrize("submitted", ["bxc3", "Bxc3"])
+def test_bishop_capture_accepted_in_either_case_when_no_pawn_can(submitted):
+    assert lp.check_answer(BISHOP_ONLY_TAKES_C3_FEN, ["Bxc3"], [submitted])
+
+
+def test_case_decides_between_pawn_and_bishop_when_both_can_capture():
+    assert lp.check_answer(PAWN_AND_BISHOP_TAKE_C3_FEN, ["bxc3"], ["bxc3"])
+    assert not lp.check_answer(PAWN_AND_BISHOP_TAKE_C3_FEN, ["bxc3"], ["Bxc3"])
+    assert lp.check_answer(PAWN_AND_BISHOP_TAKE_C3_FEN, ["Bxc3"], ["Bxc3"])
+    assert not lp.check_answer(PAWN_AND_BISHOP_TAKE_C3_FEN, ["Bxc3"], ["bxc3"])
+
+
+@pytest.mark.parametrize("submitted", ["b2b4", "B2B4"])
+def test_uci_b_file_pawn_move_accepted(submitted):
+    assert lp.check_answer(START_FEN, ["b4"], [submitted])
+
+
 def test_illegal_move_returns_false_not_error():
     assert not lp.check_answer(START_FEN, ["e4"], ["Ka1"])
 
@@ -113,3 +140,29 @@ def test_same_promotion_puzzle_accepts_both_san_and_uci_submissions():
     solution = ["e8=Q"]
     assert lp.check_answer(fen, solution, ["e8=Q"])
     assert lp.check_answer(fen, solution, ["e7e8q"])
+
+
+def test_extra_moves_return_false():
+    assert not lp.check_answer(START_FEN, ["e4", "e5", "Nf3"], ["e4", "Nf3", "Bc4"])
+
+
+# Back rank: Ra8# and Re8# both mate; Ra7 doesn't.
+ALT_MATE_FEN = "6k1/5ppp/1p6/8/8/8/8/R3R1K1 w - - 0 1"
+
+
+def test_alternate_mate_on_last_move_accepted():
+    assert lp.check_answer(ALT_MATE_FEN, ["Ra8#"], ["Re8"])
+
+
+def test_alternate_non_mating_move_rejected():
+    assert not lp.check_answer(ALT_MATE_FEN, ["Ra8#"], ["Ra7"])
+
+
+def test_shorter_mate_mid_line_accepted():
+    solution = ["Ra7", "b5", "Re8#"]
+    assert lp.check_answer(ALT_MATE_FEN, solution, ["Re8"])
+
+
+def test_moves_after_alternate_mate_rejected():
+    solution = ["Ra7", "b5", "Re8#"]
+    assert not lp.check_answer(ALT_MATE_FEN, solution, ["Re8", "Ra8"])
