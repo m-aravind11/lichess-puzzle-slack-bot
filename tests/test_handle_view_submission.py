@@ -51,7 +51,7 @@ def test_puzzle_not_found_returns_error(monkeypatch):
 
 def test_correct_answer_records_submission_and_dms_the_result(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 7)))
     monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 7)
 
     lichess = MagicMock()
@@ -68,7 +68,7 @@ def test_correct_answer_records_submission_and_dms_the_result(monkeypatch):
 
 def test_correct_answer_with_a_channel_post_announces_in_thread(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 7)))
     monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 7)
 
     lichess = MagicMock()
@@ -87,7 +87,7 @@ def test_correct_answer_with_a_channel_post_announces_in_thread(monkeypatch):
 
 def test_incorrect_answer_does_not_announce_in_thread(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.RECORDED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 0)))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = False
@@ -101,7 +101,7 @@ def test_incorrect_answer_does_not_announce_in_thread(monkeypatch):
 
 def test_duplicate_submission_returns_error_without_dm(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.DUPLICATE))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.DUPLICATE)))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
@@ -115,7 +115,7 @@ def test_duplicate_submission_returns_error_without_dm(monkeypatch):
 
 def test_closed_puzzle_returns_error_without_dm(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionResult.PUZZLE_CLOSED))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.PUZZLE_CLOSED)))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
@@ -125,3 +125,19 @@ def test_closed_puzzle_returns_error_without_dm(monkeypatch):
 
     assert "no longer accepting answers" in result["errors"][SlackActions.MOVES_BLOCK_ID]
     slack_client.chat_postMessage.assert_not_called()
+
+
+def test_podium_finish_is_announced_in_thread_with_bonus_included(monkeypatch):
+    monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 15, 1)))
+    monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 10)
+
+    lichess = MagicMock()
+    lichess.check_answer.return_value = True
+    slack_client = _slack_client()
+
+    interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
+
+    dm_call, thread_call = slack_client.chat_postMessage.call_args_list
+    assert "+15 points" in dm_call.kwargs["text"]
+    assert "(+15 pts)! :first_place_medal: 1st to solve" in thread_call.kwargs["text"]

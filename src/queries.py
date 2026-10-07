@@ -1,3 +1,8 @@
+from scoring import PODIUM_BONUS
+
+_PODIUM_BONUS_CASES = " ".join(f"WHEN {rank} THEN {bonus}" for rank, bonus in enumerate(PODIUM_BONUS, 1))
+
+
 class PuzzleQueries:
     GET_ACTIVE_BY_ID = "SELECT * FROM puzzles WHERE puzzle_id = ? AND active = 1"
 
@@ -75,12 +80,22 @@ class PuzzleQueries:
 
 class SubmissionQueries:
     # A duplicate raises IntegrityError via the partial unique index.
-    INSERT_IF_OPEN = """
-        INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)
-        SELECT ?, ?, ?, ?, ?, ?, ?, 1
-        WHERE EXISTS (
-            SELECT 1 FROM puzzles WHERE puzzle_id = ? AND active = 1 AND posted_at IS NOT NULL AND closed_at IS NULL
+    # Podium rank is counted inside the INSERT so simultaneous solvers can't share a rank.
+    INSERT_IF_OPEN = f"""
+        WITH podium AS (
+            SELECT CASE WHEN :correct = 1 AND COUNT(*) < {len(PODIUM_BONUS)} THEN COUNT(*) + 1 END AS podium_rank
+            FROM submissions
+            WHERE puzzle_id = :puzzle_id AND correct = 1 AND active = 1
         )
+        INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, podium_rank, submitted_at, active)
+        SELECT :puzzle_id, :user_id, :user_name, :moves, :correct,
+               :score + CASE podium_rank {_PODIUM_BONUS_CASES} ELSE 0 END,
+               podium_rank, :submitted_at, 1
+        FROM podium
+        WHERE EXISTS (
+            SELECT 1 FROM puzzles WHERE puzzle_id = :puzzle_id AND active = 1 AND posted_at IS NOT NULL AND closed_at IS NULL
+        )
+        RETURNING score, podium_rank
     """
 
     DEACTIVATE = "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1"

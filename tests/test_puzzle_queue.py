@@ -78,7 +78,7 @@ def test_puzzle_queued_after_todays_post_does_not_shadow_it_for_submissions(conn
     db.save_puzzle("today", "fen", ["e4"])
     db.queue_puzzle("tomorrow", "fen", ["d4"])
 
-    assert db.record_submission("today", "U1", "alice", "e4", True, 10) == db.SubmissionResult.RECORDED
+    assert db.record_submission("today", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.RECORDED
 
 
 def test_multiple_puzzles_posted_the_same_day_are_each_independently_open(conn):
@@ -88,8 +88,8 @@ def test_multiple_puzzles_posted_the_same_day_are_each_independently_open(conn):
     db.reactivate_puzzle("queued")
     db.save_puzzle("queued", "fen", ["e4"])
 
-    assert db.record_submission("queued", "U1", "alice", "e4", True, 10) == db.SubmissionResult.RECORDED
-    assert db.record_submission("random", "U2", "bob", "d4", True, 10) == db.SubmissionResult.RECORDED
+    assert db.record_submission("queued", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.RECORDED
+    assert db.record_submission("random", "U2", "bob", "d4", True, 10).result == db.SubmissionResult.RECORDED
 
 
 def test_list_puzzles_filters_by_state(conn):

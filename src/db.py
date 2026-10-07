@@ -6,6 +6,7 @@ import queue
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 import turso_serverless
 
@@ -213,28 +214,42 @@ def get_puzzle(puzzle_id: str) -> dict | None:
     return puzzle
 
 
+class SubmissionOutcome(NamedTuple):
+    result: str
+    score: int | None = None
+    podium_rank: int | None = None
+
+
 @_retry_stale_connection
-def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> str:
+def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> SubmissionOutcome:
+    """`score` is the time score; the recorded score adds any podium bonus."""
     with get_connection() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(
-                SubmissionQueries.INSERT_IF_OPEN,
-                (puzzle_id, user_id, user_name, moves, int(correct), score, datetime.now(timezone.utc).isoformat(), puzzle_id),
-            )
+            cur.execute(SubmissionQueries.INSERT_IF_OPEN, {
+                "puzzle_id": puzzle_id,
+                "user_id": user_id,
+                "user_name": user_name,
+                "moves": moves,
+                "correct": int(correct),
+                "score": score,
+                "submitted_at": datetime.now(timezone.utc).isoformat(),
+            })
+            row = cur.fetchone()
         except turso_serverless.IntegrityError:
             logger.info("record_submission: duplicate puzzle=%s user=%s", puzzle_id, user_id)
-            return SubmissionResult.DUPLICATE
+            return SubmissionOutcome(SubmissionResult.DUPLICATE)
 
-        if cur.rowcount == 0:
+        if row is None:
             logger.info("record_submission: closed puzzle=%s user=%s", puzzle_id, user_id)
-            return SubmissionResult.PUZZLE_CLOSED
+            return SubmissionOutcome(SubmissionResult.PUZZLE_CLOSED)
 
+        recorded_score, podium_rank = row
         logger.info(
-            "record_submission: recorded puzzle=%s user=%s correct=%s score=%d",
-            puzzle_id, user_id, correct, score,
+            "record_submission: recorded puzzle=%s user=%s correct=%s score=%d podium_rank=%s",
+            puzzle_id, user_id, correct, recorded_score, podium_rank,
         )
-        return SubmissionResult.RECORDED
+        return SubmissionOutcome(SubmissionResult.RECORDED, recorded_score, podium_rank)
 
 
 @_retry_stale_connection
