@@ -4,7 +4,11 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+from scoring import PODIUM_BONUS
+
 logger = logging.getLogger(__name__)
+
+_PODIUM_MEDALS = {1: ":first_place_medal:", 2: ":second_place_medal:", 3: ":third_place_medal:"}
 
 
 def dm(slack_client: WebClient, user_id: str, text: str) -> None:
@@ -39,17 +43,25 @@ def format_solution(solution: list) -> str:
     return f"Correct answer: `{answer}`\nHow it plays out:\n{steps}"
 
 
+def format_podium(podium_rank: int) -> str:
+    medal = _PODIUM_MEDALS.get(podium_rank, ":sports_medal:")
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(podium_rank, "th")
+    return f"{medal} {podium_rank}{suffix} to solve"
+
+
 def format_month(month: str) -> str:
     return datetime.strptime(month, "%Y-%m").strftime("%B %Y")
 
 
-def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int) -> str:
+def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int, podium_rank: int | None = None) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
     result_text = (
         f"Correct - nice work! +{score} points" if correct
         else f"Not quite.\n{format_solution(puzzle['solution'])}"
     )
+    if podium_rank:
+        result_text += f"\n{format_podium(podium_rank)} (+{PODIUM_BONUS[podium_rank - 1]} podium bonus)"
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 

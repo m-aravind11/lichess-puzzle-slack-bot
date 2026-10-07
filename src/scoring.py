@@ -14,6 +14,9 @@ SCORE_THRESHOLDS = [
     (720, 1),
 ]
 
+# Added on top of the time score for the first correct answers to a puzzle, in order.
+PODIUM_BONUS = (5, 3, 2, 1, 1)
+
 
 def compute_score(correct: bool, elapsed_seconds: float | None) -> int:
     # No usable post time (missing or negative slack_ts): full credit, not a penalty.

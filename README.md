@@ -19,7 +19,8 @@ Each person gets their result by DM, and a leaderboard keeps score.
 ## Features
 
 - **Scoring.** Faster correct answers earn more points, and wrong answers
-  earn none.
+  earn none. The first five correct answers to each puzzle get a podium
+  bonus (+5, +3, +2, +1, +1).
 - **Leaderboard.** Ranks players by points and tracks streaks of correct
   answers, calling out milestones. It's posted to Slack and also viewable on
   the web.

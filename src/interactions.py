@@ -9,7 +9,7 @@ import db
 from constants import SlackActions, Validation
 from daily_puzzle import LichessDailyPuzzle
 from scoring import compute_score
-from slack_helpers import dm, format_result_dm, format_seconds
+from slack_helpers import dm, format_podium, format_result_dm, format_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     score = compute_score(correct, elapsed_seconds)
 
     # No separate open/duplicate pre-checks: Slack gives interactions ONLY 3 seconds.
-    result = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
+    result, recorded_score, podium_rank = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 
     if result == db.SubmissionResult.PUZZLE_CLOSED:
@@ -97,14 +97,17 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
             "errors": {SlackActions.MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
         }
 
-    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, score))
+    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, recorded_score, podium_rank))
     log_timing("dm")
 
     if correct and puzzle['slack_ts']:
+        announcement = f"<@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{recorded_score} pts)!"
+        if podium_rank:
+            announcement += f" {format_podium(podium_rank)}"
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
             thread_ts=puzzle['slack_ts'],
-            text=f"<@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{score} pts)!",
+            text=announcement,
         )
         log_timing("thread announcement")
 
