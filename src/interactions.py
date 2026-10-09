@@ -9,7 +9,7 @@ import db
 from constants import SlackActions, Validation
 from daily_puzzle import LichessDailyPuzzle
 from scoring import compute_score
-from slack_helpers import dm, format_podium, format_result_dm, format_seconds
+from slack_helpers import dm, podium_medal, format_result_dm, format_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     if correct and puzzle['slack_ts']:
         announcement = f"<@{user_id}> solved it in {format_seconds(elapsed_seconds)} (+{recorded_score} pts)!"
         if podium_rank:
-            announcement += f" {format_podium(podium_rank)}"
+            announcement += f" {podium_medal(podium_rank)}"
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
             thread_ts=puzzle['slack_ts'],

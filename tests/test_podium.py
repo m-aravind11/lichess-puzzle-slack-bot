@@ -5,7 +5,7 @@ import pytest
 
 import db
 import migrations
-from slack_helpers import format_podium, format_result_dm
+from slack_helpers import podium_medal, format_result_dm
 
 
 @pytest.fixture
@@ -90,20 +90,20 @@ def test_closed_puzzle_gets_no_score_or_rank(conn):
 
 
 @pytest.mark.parametrize("rank,expected", [
-    (1, ":first_place_medal: 1st to solve"),
-    (2, ":second_place_medal: 2nd to solve"),
-    (3, ":third_place_medal: 3rd to solve"),
-    (4, ":sports_medal: 4th to solve"),
-    (5, ":sports_medal: 5th to solve"),
+    (1, ":first_place_medal:"),
+    (2, ":second_place_medal:"),
+    (3, ":third_place_medal:"),
+    (4, ":sports_medal:"),
+    (5, ":sports_medal:"),
 ])
-def test_format_podium(rank, expected):
-    assert format_podium(rank) == expected
+def test_podium_medal(rank, expected):
+    assert podium_medal(rank) == expected
 
 
 def test_result_dm_shows_podium_bonus():
     puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["e4"]}
     text = format_result_dm(puzzle, "e4", True, 13, podium_rank=2)
-    assert "+13 points\n:second_place_medal: 2nd to solve (+3 podium bonus)" in text
+    assert "+13 points\n:second_place_medal: (+3 podium bonus)" in text
 
 
 def test_result_dm_without_podium_has_no_bonus_line():
