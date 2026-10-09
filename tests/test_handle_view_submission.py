@@ -140,4 +140,4 @@ def test_podium_finish_is_announced_in_thread_with_bonus_included(monkeypatch):
 
     dm_call, thread_call = slack_client.chat_postMessage.call_args_list
     assert "+15 points" in dm_call.kwargs["text"]
-    assert "(+15 pts)! :first_place_medal: 1st to solve" in thread_call.kwargs["text"]
+    assert "(+15 pts)! :first_place_medal:" in thread_call.kwargs["text"]

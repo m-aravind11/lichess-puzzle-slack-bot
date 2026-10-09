@@ -43,10 +43,8 @@ def format_solution(solution: list) -> str:
     return f"Correct answer: `{answer}`\nHow it plays out:\n{steps}"
 
 
-def format_podium(podium_rank: int) -> str:
-    medal = _PODIUM_MEDALS.get(podium_rank, ":sports_medal:")
-    suffix = {1: "st", 2: "nd", 3: "rd"}.get(podium_rank, "th")
-    return f"{medal} {podium_rank}{suffix} to solve"
+def podium_medal(podium_rank: int) -> str:
+    return _PODIUM_MEDALS.get(podium_rank, ":sports_medal:")
 
 
 def format_month(month: str) -> str:
@@ -61,7 +59,7 @@ def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: in
         else f"Not quite.\n{format_solution(puzzle['solution'])}"
     )
     if podium_rank:
-        result_text += f"\n{format_podium(podium_rank)} (+{PODIUM_BONUS[podium_rank - 1]} podium bonus)"
+        result_text += f"\n{podium_medal(podium_rank)} (+{PODIUM_BONUS[podium_rank - 1]} podium bonus)"
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 
