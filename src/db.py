@@ -369,6 +369,29 @@ def mark_months_announced(months: list) -> None:
 
 
 @_retry_stale_connection
+def record_streak_bonuses(candidates: list, end_date: str) -> dict:
+    """candidate['bonus'] is the run's cumulative target; only the amount still
+    uncredited for that run gets written, dated to end_date. Returns
+    {user_id: increment} for just-written rows, so the caller can patch an
+    already-fetched board's score without re-querying."""
+    now = _now()
+    increments = {}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        for candidate in candidates:
+            cur.execute(LeaderboardQueries.STREAK_BONUS_CREDITED, (candidate["user_id"], candidate["start_date"]))
+            increment = candidate["bonus"] - cur.fetchone()[0]
+            if increment <= 0:
+                continue
+            cur.execute(
+                LeaderboardQueries.RECORD_STREAK_BONUS_INCREMENT,
+                (candidate["user_id"], candidate["streak"], candidate["start_date"], end_date, increment, now),
+            )
+            increments[candidate["user_id"]] = increment
+    return increments
+
+
+@_retry_stale_connection
 def get_stored_leaderboard(month: str) -> list | None:
     """None if the month isn't stored."""
     with get_connection() as conn:
@@ -385,6 +408,7 @@ def get_stored_leaderboard(month: str) -> list | None:
         entry["house_name"] = houses.get(entry["user_id"])
         entry["current_streak"] = None
         entry["best_streak"] = None
+        entry["current_streak_start"] = None
     return board
 
 
@@ -425,6 +449,9 @@ def _month_board(cur, month: str) -> list:
     cur.execute(LeaderboardQueries.STREAKS)
     streaks = {row["user_id"]: row for row in (_row_to_dict(cur, r) for r in cur.fetchall())}
 
+    cur.execute(LeaderboardQueries.STREAK_BONUS_TOTALS, (month,))
+    streak_bonuses = dict(cur.fetchall())
+
     cur.execute(LeaderboardQueries.HOUSE_MEMBERS)
     houses = dict(cur.fetchall())
 
@@ -435,10 +462,22 @@ def _month_board(cur, month: str) -> list:
         streak = streaks.get(user_id)
         entry["current_streak"] = streak["current_streak"] if streak else 0
         entry["best_streak"] = streak["best_streak"] if streak else 0
+        entry["current_streak_start"] = streak["current_streak_start"] if streak else None
+        entry["score"] += streak_bonuses.get(user_id, 0)
 
+    return sort_leaderboard(board.values())
+
+
+def _leaderboard_sort_key(r: dict):
+    return (-r["score"], -r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0)
+
+
+def sort_leaderboard(board) -> list:
+    """Re-sort after patching a fetched board's score in place (e.g. to fold in a
+    just-recorded streak bonus) -- ranks are assigned by list position, not re-derived."""
     return sorted(
-        board.values(),
-        key=lambda r: (-r["score"], -r["correct"], r["avg_solve_seconds"] is None, r["avg_solve_seconds"] or 0),
+        board,
+        key=_leaderboard_sort_key,
     )
 
 

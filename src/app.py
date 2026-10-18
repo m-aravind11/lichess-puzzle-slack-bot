@@ -20,7 +20,7 @@ from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import (
     format_all_time_leaderboard_post, format_leaderboard_post, format_seconds, format_solution_reveal,
 )
-from standings import build_all_time_standings, build_standings
+from standings import build_all_time_standings, build_standings, compute_streak_bonus_candidates
 from slack_verify import verify_slack_request
 
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
@@ -237,9 +237,18 @@ async def send_leaderboard():
             logger.info("admin/leaderboard:send: empty leaderboard, nothing to post")
             return Response(status_code=200)
 
+        # Written and folded into the board *before* build_standings, so the posted
+        # leaderboard's points and house totals already reflect today's bonus instead
+        # of lagging a day behind the milestone line announcing it.
+        increments = db.record_streak_bonuses(compute_streak_bonus_candidates(board), end_date=date_str)
+        for entry in board:
+            entry["score"] += increments.get(entry["user_id"], 0)
+        board = db.sort_leaderboard(board)
+
+        standings = build_standings(board, **leaderboard_month, streak_bonus_increments=increments)
         slack_client.chat_postMessage(
             channel=lichess.SLACK_CHANNEL_ID,
-            text=format_leaderboard_post(build_standings(board, **leaderboard_month)),
+            text=format_leaderboard_post(standings),
         )
     except Exception:
         logger.exception("admin/leaderboard:send failed")
