@@ -109,3 +109,9 @@ def test_result_dm_shows_podium_bonus():
 def test_result_dm_without_podium_has_no_bonus_line():
     puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["e4"]}
     assert "podium" not in format_result_dm(puzzle, "e4", True, 10)
+
+
+def test_result_dm_shows_half_points_without_a_trailing_zero():
+    puzzle = {"puzzle_id": "abc", "posted_at": "2026-10-01T11:30:00+00:00", "solution": ["e4"]}
+    assert "+9.5 points" in format_result_dm(puzzle, "e4", True, 9.5)
+    assert "+15 points" in format_result_dm(puzzle, "e4", True, 15.0)

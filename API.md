@@ -175,6 +175,8 @@ across months.
     attempted, avgSolveTime, currentStreak, bestStreak}` - everyone who
     answered a puzzle that month. `points`, `correct`, `attempted` and
     `avgSolveTime` are the month's only (all-time is its own route, below).
+    `points` is solve points plus podium and streak bonuses (see the
+    README's Scoring section) and can be a half point, e.g. `27.5`.
     `house` is `null` if never assigned; `avgSolveTime` is pre-formatted
     (e.g. `1m 30s`, `-`). `currentStreak` and `bestStreak` are `null` on a
     stored month.
@@ -225,6 +227,13 @@ Posts the month's standings (see `GET /admin/leaderboard`) to the Slack
 channel - the player table (with each player's house), streak milestones,
 then house standings (omitted while nobody is in a house). Titled
 "Leaderboard - September 2026".
+
+Just before posting, it credits the streak bonus for any milestone a
+player's current streak has reached, dated today, so the posted points
+already include it and the milestone line shows the bonus. Each milestone is
+credited once per streak, so a rerun - or a missed day caught up later -
+never credits it twice. These rows are in the `streak_bonuses` table and are
+never rewritten.
 
 Before that, every stored month not yet posted gets its "Final standings -
 September 2026" message (from the stored board, so no streaks), followed by
