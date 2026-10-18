@@ -197,6 +197,28 @@ def _0014_add_podium_rank_to_submissions(conn) -> None:
         conn.cursor().execute("ALTER TABLE submissions ADD COLUMN podium_rank INTEGER")
 
 
+def _0015_create_streak_bonuses_table(conn) -> None:
+    # One immutable row per milestone actually crossed within a run (user_id,
+    # start_date, streak), each holding only the incremental bonus earned at that
+    # crossing over whatever was already credited for the same run -- not the
+    # milestone's full cumulative value. Rows are never updated once written, so a
+    # row's end_date (and the month it counts toward in the leaderboard total) never
+    # moves after the fact, even if the same run later crosses a higher milestone in
+    # a later month. A milestone earned again after the streak resets gets its own
+    # row, under its new start_date.
+    conn.cursor().execute("""
+        CREATE TABLE IF NOT EXISTS streak_bonuses (
+            user_id TEXT NOT NULL,
+            streak INTEGER NOT NULL,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            bonus INTEGER NOT NULL,
+            awarded_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, start_date, streak)
+        )
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -212,6 +234,7 @@ MIGRATIONS = [
     ("0012_create_monthly_scores_table", _0012_create_monthly_scores_table),
     ("0013_create_announced_months_table", _0013_create_announced_months_table),
     ("0014_add_podium_rank_to_submissions", _0014_add_podium_rank_to_submissions),
+    ("0015_create_streak_bonuses_table", _0015_create_streak_bonuses_table),
 ]
 
 

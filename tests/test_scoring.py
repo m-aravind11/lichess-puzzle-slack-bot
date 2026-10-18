@@ -1,6 +1,20 @@
 import pytest
 
-from scoring import MAX_SCORE, compute_score
+from constants import Streaks
+from scoring import MAX_SCORE, STREAK_BONUS, compute_score
+
+
+def test_streak_bonus_values_strictly_increase_with_milestone_length():
+    # db.record_streak_bonuses derives each crossing's incremental credit as
+    # STREAK_BONUS[milestone] - (amount already credited for this run). That's only
+    # ever non-negative if cumulative targets never decrease, and a crossing with no
+    # new credit over the previous milestone would silently award +0 forever.
+    values = [STREAK_BONUS[m] for m in Streaks.MILESTONES]
+    assert all(b > a for a, b in zip(values, values[1:]))
+
+
+def test_every_milestone_has_a_bonus_value():
+    assert set(STREAK_BONUS) == set(Streaks.MILESTONES)
 
 
 @pytest.mark.parametrize("elapsed_seconds", [None, 0, 1, 3600, 1_000_000])

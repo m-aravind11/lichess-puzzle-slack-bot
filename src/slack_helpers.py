@@ -141,7 +141,10 @@ def format_streak_milestones(standings: dict) -> str | None:
     for milestone in standings["milestones"]:
         mentions = [f"<@{p['user_id']}>" for p in milestone["players"]]
         verb = "is" if len(mentions) == 1 else "are"
-        lines.append(f"• {_join_names(mentions)} {verb} on a {milestone['streak']}-day streak.")
+        lines.append(
+            f"• {_join_names(mentions)} {verb} on a {milestone['streak']}-day streak "
+            f"(+{milestone['bonus']} bonus points)."
+        )
     return "\n".join(lines)
 
 

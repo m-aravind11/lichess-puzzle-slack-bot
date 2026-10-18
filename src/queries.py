@@ -127,6 +127,14 @@ class LeaderboardQueries:
         WHERE s.active = 1 AND s.correct = 1 AND p.slack_ts IS NOT NULL AND substr(p.posted_at, 1, 7) = ?
     """
 
+    # A row's end_date is fixed at the day it was earned and never moves, so this
+    # always counts toward the same month regardless of what the same run does later.
+    STREAK_BONUS_TOTALS = """
+        SELECT user_id, SUM(bonus) AS bonus FROM streak_bonuses
+        WHERE substr(end_date, 1, 7) = ?
+        GROUP BY user_id
+    """
+
     UNSTORED_MONTHS_BEFORE = """
         SELECT DISTINCT substr(p.posted_at, 1, 7) AS month
         FROM submissions s
@@ -179,18 +187,19 @@ class LeaderboardQueries:
     # and unanswered (one answer per puzzle, so a wrong one already broke it).
     STREAKS = """
         WITH seq AS (
-            SELECT puzzle_id, closed_at,
+            SELECT puzzle_id, closed_at, posted_at,
                    ROW_NUMBER() OVER (ORDER BY posted_at, rowid) AS n
             FROM puzzles WHERE posted_at IS NOT NULL AND active = 1
         ),
         wins AS (
-            SELECT s.user_id, seq.n,
+            SELECT s.user_id, seq.n, seq.posted_at,
                    seq.n - ROW_NUMBER() OVER (PARTITION BY s.user_id ORDER BY seq.n) AS run
             FROM submissions s JOIN seq ON seq.puzzle_id = s.puzzle_id
             WHERE s.active = 1 AND s.correct = 1
         ),
         runs AS (
-            SELECT user_id, COUNT(*) AS len, MAX(n) AS last_n FROM wins GROUP BY user_id, run
+            SELECT user_id, COUNT(*) AS len, MAX(n) AS last_n, MIN(posted_at) AS first_posted_at
+            FROM wins GROUP BY user_id, run
         ),
         latest AS (
             SELECT n, puzzle_id, closed_at IS NULL AS is_open FROM seq ORDER BY n DESC LIMIT 1
@@ -198,14 +207,38 @@ class LeaderboardQueries:
         answered_latest AS (
             SELECT DISTINCT s.user_id FROM submissions s JOIN latest l ON l.puzzle_id = s.puzzle_id
             WHERE s.active = 1
+        ),
+        -- At most one row per user: the single run that reaches the latest puzzle, or the
+        -- one before it while the latest is open and still unanswered (one answer per
+        -- puzzle, so a wrong one already broke it).
+        current_run AS (
+            SELECT r.user_id, r.len, r.first_posted_at
+            FROM runs r CROSS JOIN latest l
+            LEFT JOIN answered_latest a ON a.user_id = r.user_id
+            WHERE r.last_n >= l.n - (l.is_open AND a.user_id IS NULL)
         )
-        SELECT r.user_id,
-               MAX(r.len) AS best_streak,
-               COALESCE(MAX(CASE WHEN r.last_n >= l.n - (l.is_open AND a.user_id IS NULL) THEN r.len END), 0)
-                   AS current_streak
-        FROM runs r CROSS JOIN latest l
-        LEFT JOIN answered_latest a ON a.user_id = r.user_id
-        GROUP BY r.user_id
+        SELECT runs.user_id,
+               MAX(runs.len) AS best_streak,
+               COALESCE(MAX(current_run.len), 0) AS current_streak,
+               substr(MAX(current_run.first_posted_at), 1, 10) AS current_streak_start
+        FROM runs
+        LEFT JOIN current_run ON current_run.user_id = runs.user_id
+        GROUP BY runs.user_id
+    """
+
+    # Total already credited for this run, across whichever past (possibly
+    # already-closed) months its earlier crossings landed in.
+    STREAK_BONUS_CREDITED = "SELECT COALESCE(SUM(bonus), 0) FROM streak_bonuses WHERE user_id = ? AND start_date = ?"
+
+    # Insert-only: one immutable row per milestone actually crossed, so a run that
+    # spans a month boundary never shifts an already-closed month's credit forward.
+    # DO NOTHING guards only against a retried cron run re-inserting the exact same
+    # crossing; db.record_streak_bonuses is what decides whether there's anything new
+    # to credit at all.
+    RECORD_STREAK_BONUS_INCREMENT = """
+        INSERT INTO streak_bonuses (user_id, streak, start_date, end_date, bonus, awarded_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, start_date, streak) DO NOTHING
     """
 
     # Includes soft-deleted rows so leavers still count for their house; a
