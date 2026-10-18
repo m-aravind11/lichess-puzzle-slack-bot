@@ -493,3 +493,14 @@ def test_finished_month_is_stored_even_on_a_holiday(conn, now, send, monkeypatch
     answer(conn, "U1", "sep", 10)
     assert send() == []
     assert stored(conn) == [("2026-09", "U1", 10, 1, 1)]
+
+
+def test_half_points_add_up_and_are_stored_unrounded(conn, now):
+    post(conn, "sep1", "2026-09-01")
+    post(conn, "sep2", "2026-09-02")
+    answer(conn, "U1", "sep1", 9.5)
+    answer(conn, "U1", "sep2", 1)
+    assert points("2026-09") == {"U1": 10.5}
+
+    db.store_finished_months()
+    assert stored(conn) == [("2026-09", "U1", 10.5, 2, 2)]

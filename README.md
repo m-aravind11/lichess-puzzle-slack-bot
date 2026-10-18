@@ -18,9 +18,9 @@ Each person gets their result by DM, and a leaderboard keeps score.
 
 ## Features
 
-- **Scoring.** Faster correct answers earn more points, and wrong answers
-  earn none. The first five correct answers to each puzzle get a podium
-  bonus (+5, +3, +2, +1, +1).
+- **Scoring.** Solve points for speed, a podium bonus for the first five
+  correct answers, and a streak bonus for solving puzzles in a row. See
+  [Scoring](#scoring).
 - **Leaderboard.** Ranks players by points and tracks streaks of correct
   answers, calling out milestones. It's posted to Slack and also viewable on
   the web.
@@ -40,6 +40,70 @@ Each person gets their result by DM, and a leaderboard keeps score.
 
 The web pages for the leaderboard, houses and holidays are linked from the
 home page and ask for the admin secret.
+
+## Scoring
+
+A puzzle's points are its solve points plus any podium bonus, and streak
+bonuses are added on top. One answer per puzzle.
+
+### Solve points
+
+Counted from when the puzzle is posted. Each range includes its start, not
+its end. Any correct answer before the solution is revealed earns at least 1.
+
+| Time after posting | Points | Time after posting | Points |
+|---|---|---|---|
+| 0 – 10 min | 10 | 4 h – 5 h | 5 |
+| 10 – 20 min | 9.5 | 5 h – 6 h | 4.5 |
+| 20 – 30 min | 9 | 6 h – 7 h 30 min | 4 |
+| 30 – 45 min | 8.5 | 7 h 30 min – 9 h | 3.5 |
+| 45 min – 1 h | 8 | 9 h – 11 h | 3 |
+| 1 h – 1 h 30 min | 7.5 | 11 h – 13 h | 2.5 |
+| 1 h 30 min – 2 h | 7 | 13 h – 16 h | 2 |
+| 2 h – 2 h 30 min | 6.5 | 16 h – 20 h | 1.5 |
+| 2 h 30 min – 3 h | 6 | 20 h – solution reveal | 1 |
+| 3 h – 4 h | 5.5 | Wrong answer | 0 |
+
+### Podium bonus
+
+The first five correct answers to a puzzle get a bonus on top of their solve
+points, so a puzzle is worth at most 15.
+
+| Correct answer | Bonus |
+|---|---|
+| 1st | +5 |
+| 2nd | +3 |
+| 3rd | +2 |
+| 4th | +1 |
+| 5th | +1 |
+
+### Streak bonus
+
+A streak is the number of puzzles solved in a row. A wrong or missed answer
+resets it; holidays and days with no puzzle don't. Each milestone's bonus is
+added once, on the day it's reached, and counts toward that month's points.
+Bonuses already earned are kept when the streak breaks, and a new streak can
+earn them all again.
+
+| Streak reaches | Bonus that day | Total from the streak |
+|---|---|---|
+| 3 | +3 | 3 |
+| 7 | +2 | 5 |
+| 14 | +5 | 10 |
+| 30 | +15 | 25 |
+| 50 | +10 | 35 |
+| 100 | +25 | 60 |
+| 150 | +20 | 80 |
+| 200 | +15 | 95 |
+| 250 | +15 | 110 |
+| 300 | +10 | 120 |
+| 365 | +10 | 130 |
+
+For example, solving 25 minutes after posting as the 2nd correct answer, on
+your 7th solve in a row, earns 9 + 3 + 2 = 14 points.
+
+Ties on points go to more correct answers, then the faster average solve
+time.
 
 ## Running it
 

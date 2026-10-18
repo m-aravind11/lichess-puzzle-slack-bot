@@ -1,7 +1,7 @@
 import pytest
 
 from constants import Streaks
-from scoring import MAX_SCORE, STREAK_BONUS, compute_score
+from scoring import MAX_SCORE, MIN_SCORE, STREAK_BONUS, compute_score
 
 
 def test_streak_bonus_values_strictly_increase_with_milestone_length():
@@ -38,41 +38,49 @@ def test_correct_answer_with_negative_elapsed_gets_max_score(elapsed_seconds):
 @pytest.mark.parametrize("minutes,expected", [
     (0, 10),
     (9, 10),
-    (10, 9),
-    (29, 9),
-    (30, 8),
-    (59, 8),
-    (60, 7),
-    (89, 7),
-    (90, 6),
-    (119, 6),
-    (120, 5),
-    (179, 5),
-    (180, 4),
-    (239, 4),
-    (240, 3),
-    (359, 3),
-    (360, 2),
-    (539, 2),
-    (540, 1),
-    (719, 1),
-    (720, 0),
-    (1440, 0),
+    (10, 9.5),
+    (19, 9.5),
+    (20, 9),
+    (30, 8.5),
+    (45, 8),
+    (60, 7.5),
+    (90, 7),
+    (120, 6.5),
+    (150, 6),
+    (180, 5.5),
+    (240, 5),
+    (300, 4.5),
+    (360, 4),
+    (450, 3.5),
+    (540, 3),
+    (660, 2.5),
+    (780, 2),
+    (960, 1.5),
+    (1199, 1.5),
+    (1200, 1),
+    (1400, 1),
+    (10_000, 1),
 ])
 def test_correct_answer_steps_down_with_elapsed_time(minutes, expected):
     assert compute_score(True, minutes * 60) == expected
 
 
-def test_score_is_always_an_int():
-    assert isinstance(compute_score(True, 12345), int)
+@pytest.mark.parametrize("minutes", range(0, 1500, 7))
+def test_score_is_a_multiple_of_half_a_point(minutes):
+    assert (compute_score(True, minutes * 60) * 2).is_integer()
+
+
+def test_correct_answer_never_scores_below_min_score():
+    assert compute_score(True, 10**9) == MIN_SCORE
+
+
+@pytest.mark.parametrize("minutes,old_score", [(0, 10), (10, 9), (30, 8), (60, 7), (90, 6), (120, 5), (180, 4), (240, 3), (360, 2), (540, 1)])
+def test_no_solve_time_scores_less_than_the_old_whole_point_slabs(minutes, old_score):
+    assert compute_score(True, minutes * 60) >= old_score
 
 
 def test_score_never_exceeds_max_score():
     assert compute_score(True, 0.0001) <= MAX_SCORE
-
-
-def test_score_never_goes_negative():
-    assert compute_score(True, 10**9) >= 0
 
 
 def test_score_is_monotonically_non_increasing_with_elapsed_time():

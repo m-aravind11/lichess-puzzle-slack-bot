@@ -35,6 +35,10 @@ def format_seconds(seconds: float | None) -> str:
     return " ".join(parts)
 
 
+def format_points(points: float) -> str:
+    return str(int(points)) if points == int(points) else str(points)
+
+
 def format_solution(solution: list) -> str:
     answer = " ".join(solution[0::2])
     if len(solution) == 1:
@@ -51,11 +55,11 @@ def format_month(month: str) -> str:
     return datetime.strptime(month, "%Y-%m").strftime("%B %Y")
 
 
-def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: int, podium_rank: int | None = None) -> str:
+def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
     result_text = (
-        f"Correct - nice work! +{score} points" if correct
+        f"Correct - nice work! +{format_points(score)} points" if correct
         else f"Not quite.\n{format_solution(puzzle['solution'])}"
     )
     if podium_rank:
@@ -88,7 +92,7 @@ def format_leaderboard(standings: dict) -> str:
             str(p["rank"]),
             p["name"],
             p["house"] or "-",
-            str(p["points"]),
+            format_points(p["points"]),
             f"{p['correct']}/{p['attempted']}",
             format_seconds(p["avg_solve_seconds"]),
             "-" if p["current_streak"] is None else str(p["current_streak"]),
@@ -108,7 +112,7 @@ def format_house_leaderboard(standings: dict, points_of: str = "this month") -> 
 
     columns = ["#", "House", "Points", "Solved", "Players"]
     rows = [
-        [str(h["rank"]), h["name"], str(h["points"]), str(h["correct"]), str(h["players"])]
+        [str(h["rank"]), h["name"], format_points(h["points"]), str(h["correct"]), str(h["players"])]
         for h in standings["houses"]
     ]
     return f"*House standings* _(sum of each house's players' points {points_of})_\n{_format_table(columns, rows)}"
@@ -117,7 +121,7 @@ def format_house_leaderboard(standings: dict, points_of: str = "this month") -> 
 def format_all_time_leaderboard_post(standings: dict) -> str:
     columns = ["#", "Name", "House", "Points", "Solved", "Months"]
     rows = [
-        [str(p["rank"]), p["name"], p["house"] or "-", str(p["points"]), f"{p['correct']}/{p['attempted']}", str(p["months"])]
+        [str(p["rank"]), p["name"], p["house"] or "-", format_points(p["points"]), f"{p['correct']}/{p['attempted']}", str(p["months"])]
         for p in standings["players"]
     ]
     header = (

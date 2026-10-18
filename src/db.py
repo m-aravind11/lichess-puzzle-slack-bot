@@ -216,12 +216,12 @@ def get_puzzle(puzzle_id: str) -> dict | None:
 
 class SubmissionOutcome(NamedTuple):
     result: str
-    score: int | None = None
+    score: float | None = None
     podium_rank: int | None = None
 
 
 @_retry_stale_connection
-def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: int) -> SubmissionOutcome:
+def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: float) -> SubmissionOutcome:
     """`score` is the time score; the recorded score adds any podium bonus."""
     with get_connection() as conn:
         cur = conn.cursor()
@@ -246,7 +246,7 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
 
         recorded_score, podium_rank = row
         logger.info(
-            "record_submission: recorded puzzle=%s user=%s correct=%s score=%d podium_rank=%s",
+            "record_submission: recorded puzzle=%s user=%s correct=%s score=%s podium_rank=%s",
             puzzle_id, user_id, correct, recorded_score, podium_rank,
         )
         return SubmissionOutcome(SubmissionResult.RECORDED, recorded_score, podium_rank)
