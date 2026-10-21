@@ -222,19 +222,6 @@ class LichessDailyPuzzle:
             day += timedelta(days=1)
         return day
 
-    def send_holiday_notice(self, today: datetime) -> None:
-        next_day = self.next_puzzle_date(today)
-        try:
-            WebClient(token=self.LICHESS_OAUTH_TOKEN).chat_postMessage(
-                channel=self.SLACK_CHANNEL_ID,
-                text=(
-                    f":calendar: No puzzle today due to a holiday. "
-                    f"The next puzzle will be posted on *{next_day:%A, %B} {next_day.day}*."
-                ),
-            )
-        except SlackApiError as e:
-            logger.error("Holiday notice failed: %s", e.response['error'])
-
     def _fetch_new_puzzle(self) -> tuple[str, str, list]:
         queued = db.get_next_queued_puzzle()
         if queued:
@@ -280,7 +267,6 @@ class LichessDailyPuzzle:
 
         if db.is_holiday(date_str):
             logger.info("%s is a holiday, skipping", date_str)
-            self.send_holiday_notice(today)
             return
 
         if db.puzzle_sent_for_date(date_str):

@@ -74,6 +74,13 @@ def format_solution_reveal(puzzle: dict) -> str:
     )
 
 
+def format_holiday_notice(next_puzzle_date: datetime) -> str:
+    return (
+        ":calendar: No puzzle today due to a holiday. "
+        f"The next puzzle will be posted on *{next_puzzle_date:%A, %B} {next_puzzle_date.day}*."
+    )
+
+
 def _format_table(columns: list, rows: list) -> str:
     widths = [max(len(col), *(len(r[i]) for r in rows)) for i, col in enumerate(columns)]
 

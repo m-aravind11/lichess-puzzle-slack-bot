@@ -11,6 +11,7 @@ import app as app_module
 import db
 import migrations
 from constants import Security
+from slack_helpers import format_holiday_notice
 
 AUTH = {"Authorization": "Bearer s3cr3t"}
 
@@ -119,7 +120,6 @@ def sent(monkeypatch):
     calls = MagicMock()
     monkeypatch.setattr(app_module.lichess, "_generate_and_send_puzzle", calls.generate)
     monkeypatch.setattr(app_module.lichess, "_resend_puzzle", calls.resend)
-    monkeypatch.setattr(app_module.lichess, "send_holiday_notice", calls.notice)
     return calls
 
 
@@ -131,14 +131,12 @@ def test_no_puzzle_is_sent_on_a_holiday(conn, sent):
     db.add_holiday(day(0))
     send()
     sent.generate.assert_not_called()
-    sent.notice.assert_called_once()
 
 
 def test_puzzle_is_sent_on_a_normal_day(conn, sent):
     db.add_holiday(day(1))
     send()
     sent.generate.assert_called_once()
-    sent.notice.assert_not_called()
 
 
 @pytest.mark.parametrize("flags", [{"force": True}, {"new_puzzle": True}])
@@ -146,7 +144,6 @@ def test_manual_send_overrides_a_holiday(conn, sent, flags):
     db.add_holiday(day(0))
     send(**flags)
     sent.generate.assert_called_once()
-    sent.notice.assert_not_called()
 
 
 FRIDAY = datetime(2026, 10, 23, 11, 30, tzinfo=timezone.utc)
@@ -162,15 +159,43 @@ def test_next_puzzle_date_skips_upcoming_holidays(conn):
     assert app_module.lichess.next_puzzle_date(FRIDAY).strftime("%Y-%m-%d") == "2026-10-28"
 
 
-def test_holiday_notice_names_the_next_puzzle_day(conn, monkeypatch):
-    client = MagicMock()
-    monkeypatch.setattr("daily_puzzle.WebClient", MagicMock(return_value=client))
+def test_holiday_notice_is_posted_by_the_reveal_cron(client, conn, slack, monkeypatch):
+    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    db.add_holiday(day(0))
 
-    app_module.lichess.send_holiday_notice(FRIDAY)
+    assert client.post("/admin/puzzle:revealSolution", headers=AUTH).status_code == 200
 
-    text = client.chat_postMessage.call_args.kwargs["text"]
-    assert "holiday" in text
-    assert "Monday, October 26" in text
+    [call] = slack.chat_postMessage.call_args_list
+    assert "thread_ts" not in call.kwargs
+    assert "No puzzle today due to a holiday" in call.kwargs["text"]
+
+
+def test_holiday_notice_is_separate_from_the_solution_reveal(client, conn, slack, monkeypatch):
+    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value={
+        "puzzle_id": "p1", "solution": ["e4", "e5", "Qh5"], "slack_ts": "1700000000.0",
+    }))
+    db.add_holiday(day(0))
+
+    client.post("/admin/puzzle:revealSolution", headers=AUTH)
+
+    reveal, notice = slack.chat_postMessage.call_args_list
+    assert reveal.kwargs["thread_ts"] == "1700000000.0"
+    assert "thread_ts" not in notice.kwargs
+    assert "holiday" in notice.kwargs["text"]
+
+
+def test_no_holiday_notice_on_a_normal_day(client, conn, slack, monkeypatch):
+    monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
+    db.add_holiday(day(1))
+
+    client.post("/admin/puzzle:revealSolution", headers=AUTH)
+
+    slack.chat_postMessage.assert_not_called()
+
+
+def test_holiday_notice_names_the_next_puzzle_day():
+    assert "*Monday, October 26*" in format_holiday_notice(datetime(2026, 10, 26))
 
 
 @pytest.fixture
