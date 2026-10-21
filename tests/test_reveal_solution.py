@@ -12,6 +12,7 @@ from constants import Security
 def client(monkeypatch):
     monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
     monkeypatch.setattr(app_module, "slack_client", MagicMock())
+    monkeypatch.setattr(db, "is_holiday", MagicMock(return_value=False))
     return TestClient(app_module.app)
 
 

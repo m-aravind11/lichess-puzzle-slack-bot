@@ -18,7 +18,8 @@ from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActi
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import (
-    format_all_time_leaderboard_post, format_leaderboard_post, format_seconds, format_solution_reveal,
+    format_all_time_leaderboard_post, format_holiday_notice, format_leaderboard_post, format_seconds,
+    format_solution_reveal,
 )
 from standings import build_all_time_standings, build_standings, compute_streak_bonus_candidates
 from slack_verify import verify_slack_request
@@ -178,24 +179,34 @@ async def slack_interactions(request: Request):
 
     return Response(status_code=200)
 
+def _reveal_previous_solution(date_str: str) -> None:
+    puzzle = db.close_previous_puzzle(date_str)
+    if not puzzle:
+        logger.info("admin/puzzle:revealSolution: no open puzzle posted before %s, nothing to post", date_str)
+        return
+    if not puzzle['slack_ts']:
+        logger.info("admin/puzzle:revealSolution: puzzle %s has no thread to post to", puzzle['puzzle_id'])
+        return
+
+    slack_client.chat_postMessage(
+        channel=lichess.SLACK_CHANNEL_ID,
+        thread_ts=puzzle['slack_ts'],
+        text=format_solution_reveal(puzzle),
+        reply_broadcast=True,
+    )
+
 @app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_cron_auth)])
 async def reveal_puzzle_solution():
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc)
+    date_str = today.strftime("%Y-%m-%d")
     try:
-        puzzle = db.close_previous_puzzle(date_str)
-        if not puzzle:
-            logger.info("admin/puzzle:revealSolution: no open puzzle posted before %s, nothing to post", date_str)
-            return Response(status_code=200)
-        if not puzzle['slack_ts']:
-            logger.info("admin/puzzle:revealSolution: puzzle %s has no thread to post to", puzzle['puzzle_id'])
-            return Response(status_code=200)
-
-        slack_client.chat_postMessage(
-            channel=lichess.SLACK_CHANNEL_ID,
-            thread_ts=puzzle['slack_ts'],
-            text=format_solution_reveal(puzzle),
-            reply_broadcast=True,
-        )
+        _reveal_previous_solution(date_str)
+        # Sent from the earliest cron so the channel hears before the usual puzzle time.
+        if db.is_holiday(date_str):
+            slack_client.chat_postMessage(
+                channel=lichess.SLACK_CHANNEL_ID,
+                text=format_holiday_notice(lichess.next_puzzle_date(today)),
+            )
     except Exception:
         logger.exception("admin/puzzle:revealSolution failed")
         raise
