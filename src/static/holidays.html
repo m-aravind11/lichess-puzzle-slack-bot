@@ -219,7 +219,7 @@
       var upcoming = state.dates.filter(function (d) { return d >= t; });
       var past = state.dates.filter(function (d) { return d < t; }).reverse();
 
-      renderByYear(document.getElementById('upcoming'), upcoming, 'No upcoming holidays - a puzzle goes out every day.');
+      renderByYear(document.getElementById('upcoming'), upcoming, 'No upcoming holidays - a puzzle goes out every weekday.');
 
       document.getElementById('pastWrap').hidden = !past.length;
       document.getElementById('pastToggle').textContent = (state.showPast ? 'Hide' : 'Show') + ' past holidays (' + past.length + ')';
