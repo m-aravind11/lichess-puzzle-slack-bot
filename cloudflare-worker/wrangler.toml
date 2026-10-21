@@ -3,6 +3,6 @@ main = "worker.js"
 compatibility_date = "2024-01-01"
 
 [triggers]
-crons = ["0 11 * * *", "30 11 * * *", "50 10 * * *"]
+crons = ["0 11 * * 2-6", "30 11 * * 2-6", "50 10 * * 2-6"]
 
 # Set with: wrangler secret put CRON_SECRET

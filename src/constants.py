@@ -19,6 +19,11 @@ class Validation:
     SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=?[QRBN])?)[+#]?$', re.IGNORECASE)
 
 
+class Schedule:
+    # Must match the day-of-week field of the crons in cloudflare-worker/wrangler.toml.
+    PUZZLE_WEEKDAYS = frozenset(range(5))
+
+
 class SlackActions:
     OPEN_ANSWER_MODAL = "open_answer_modal"
     ANSWER_MODAL_CALLBACK_ID = "answer_modal"
