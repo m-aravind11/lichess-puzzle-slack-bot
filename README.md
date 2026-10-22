@@ -44,7 +44,12 @@ home page and ask for the admin secret.
 ## Scoring
 
 A puzzle's points are its solve points plus any podium bonus, and streak
-bonuses are added on top. One answer per puzzle.
+bonuses are added on top.
+
+Each puzzle allows two attempts. A wrong first attempt is DMed as wrong
+without revealing the solution; the solution is DMed only after a correct
+answer or a second wrong one. A correct second attempt earns half the solve
+points and no podium bonus.
 
 ### Solve points
 
@@ -66,8 +71,8 @@ its end. Any correct answer before the solution is revealed earns at least 1.
 
 ### Podium bonus
 
-The first five correct answers to a puzzle get a bonus on top of their solve
-points, so a puzzle is worth at most 15.
+The first five correct first-attempt answers to a puzzle get a bonus on top of
+their solve points, so a puzzle is worth at most 15.
 
 | Correct answer | Bonus |
 |---|---|

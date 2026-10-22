@@ -28,6 +28,10 @@ SCORE_THRESHOLDS = [
 # Added on top of the time score for the first correct answers to a puzzle, in order.
 PODIUM_BONUS = (5, 3, 2, 1, 1)
 
+MAX_ATTEMPTS = 2
+# Share of the time score a correct later attempt earns; it never gets a podium bonus.
+RETRY_SCORE_FACTOR = 0.5
+
 # Counts toward the real leaderboard total, so the ceiling stays proportionate to what
 # daily play can earn (max ~15/day): the 365-day milestone tops out under ten days of
 # normal scoring, not a month and a half of it. Cumulative target per milestone length
