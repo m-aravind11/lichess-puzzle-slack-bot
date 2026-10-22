@@ -8,7 +8,7 @@ from slack_sdk import WebClient
 import db
 from constants import SlackActions, Validation
 from daily_puzzle import LichessDailyPuzzle
-from scoring import compute_score
+from scoring import MAX_ATTEMPTS, compute_score
 from slack_helpers import dm, podium_medal, format_points, format_result_dm, format_seconds
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
     score = compute_score(correct, elapsed_seconds)
 
     # No separate open/duplicate pre-checks: Slack gives interactions ONLY 3 seconds.
-    result, recorded_score, podium_rank = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
+    result, recorded_score, podium_rank, attempt = db.record_submission(puzzle_id, user_id, user_name, text, correct, score)
     log_timing("record_submission")
 
     if result == db.SubmissionResult.PUZZLE_CLOSED:
@@ -91,13 +91,13 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
             "response_action": "errors",
             "errors": {SlackActions.MOVES_BLOCK_ID: "The solution's been posted - this puzzle is no longer accepting answers."},
         }
-    if result == db.SubmissionResult.DUPLICATE:
+    if result == db.SubmissionResult.NO_ATTEMPTS_LEFT:
         return {
             "response_action": "errors",
-            "errors": {SlackActions.MOVES_BLOCK_ID: "You've already submitted an answer for this puzzle."},
+            "errors": {SlackActions.MOVES_BLOCK_ID: "You've already solved this one or used up all your attempts - see you at the next puzzle!"},
         }
 
-    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, recorded_score, podium_rank))
+    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, recorded_score, podium_rank, MAX_ATTEMPTS - attempt))
     log_timing("dm")
 
     if correct and puzzle['slack_ts']:

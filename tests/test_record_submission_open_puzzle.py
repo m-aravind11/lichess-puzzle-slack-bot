@@ -33,7 +33,7 @@ def test_open_puzzle_accepts_a_submission(conn):
     assert db.record_submission("p1", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.RECORDED
 
 
-def test_duplicate_submission_is_rejected(monkeypatch):
+def test_racing_submission_for_the_same_attempt_is_rejected(monkeypatch):
     # sqlite3's IntegrityError isn't turso_serverless's, so mock it.
     cur = MagicMock()
     cur.execute.side_effect = turso_serverless.IntegrityError("duplicate")
@@ -45,7 +45,36 @@ def test_duplicate_submission_is_rejected(monkeypatch):
         yield mock_conn
 
     monkeypatch.setattr(db, "get_connection", fake_get_connection)
-    assert db.record_submission("p1", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.DUPLICATE
+    assert db.record_submission("p1", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.NO_ATTEMPTS_LEFT
+
+
+def test_wrong_first_attempt_allows_a_second(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    first = db.record_submission("p1", "U1", "alice", "d4", False, 0)
+    second = db.record_submission("p1", "U1", "alice", "e4", True, 10)
+    assert (first.result, first.attempt) == (db.SubmissionResult.RECORDED, 1)
+    assert (second.result, second.attempt) == (db.SubmissionResult.RECORDED, 2)
+
+
+def test_no_third_attempt(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    db.record_submission("p1", "U1", "alice", "d4", False, 0)
+    db.record_submission("p1", "U1", "alice", "c4", False, 0)
+    assert db.record_submission("p1", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.NO_ATTEMPTS_LEFT
+
+
+def test_no_second_attempt_after_a_correct_answer(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    db.record_submission("p1", "U1", "alice", "e4", True, 10)
+    assert db.record_submission("p1", "U1", "alice", "e4", True, 10).result == db.SubmissionResult.NO_ATTEMPTS_LEFT
+
+
+def test_deactivated_attempt_frees_it_up(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    db.record_submission("p1", "U1", "alice", "d4", False, 0)
+    db.record_submission("p1", "U1", "alice", "c4", False, 0)
+    conn.execute("UPDATE submissions SET active = 0 WHERE attempt = 2")
+    assert db.record_submission("p1", "U1", "alice", "e4", True, 10).attempt == 2
 
 
 def test_closing_the_puzzle_rejects_further_submissions(conn, monkeypatch):

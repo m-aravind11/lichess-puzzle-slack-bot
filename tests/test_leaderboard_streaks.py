@@ -48,13 +48,16 @@ def add_puzzles(conn, count, deactivated=(), open_=()):
         )
 
 
-def add_answers(conn, user_id, answers, active=True):
+def add_answers(conn, user_id, answers, active=True, attempt=1):
     """answers maps puzzle number -> correct."""
     for n, correct in answers.items():
         conn.execute(
-            "INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, submitted_at, active)"
-            " VALUES (?, ?, ?, 'e4', ?, ?, ?, ?)",
-            (f"p{n}", user_id, user_id, int(correct), 10 if correct else 0, f"2024-01-{n:02d}T12:05:00+00:00", int(active)),
+            "INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, attempt, submitted_at, active)"
+            " VALUES (?, ?, ?, 'e4', ?, ?, ?, ?, ?)",
+            (
+                f"p{n}", user_id, user_id, int(correct), 10 if correct else 0, attempt,
+                f"2024-01-{n:02d}T12:05:00+00:00", int(active),
+            ),
         )
 
 
@@ -143,19 +146,41 @@ def test_correct_answer_on_open_puzzle_after_a_miss_starts_a_new_streak(conn):
     assert streaks("alice") == (1, 1)
 
 
-def test_wrong_answer_on_open_puzzle_ends_the_streak_right_away(conn):
+def test_one_wrong_attempt_on_open_puzzle_keeps_the_streak(conn):
     add_puzzles(conn, 3, open_={3})
     add_answers(conn, "alice", {1: True, 2: True, 3: False})
-    assert streaks("alice") == (0, 2)
+    assert streaks("alice") == (2, 2)
 
     conn.execute("UPDATE puzzles SET closed_at = 'x' WHERE puzzle_id = 'p3'")
     assert streaks("alice") == (0, 2)
 
 
+def test_correct_second_attempt_on_open_puzzle_extends_the_streak(conn):
+    add_puzzles(conn, 3, open_={3})
+    add_answers(conn, "alice", {1: True, 2: True, 3: False})
+    add_answers(conn, "alice", {3: True}, attempt=2)
+    assert streaks("alice") == (3, 3)
+
+
+def test_two_attempts_count_as_one_puzzle_attempted(conn):
+    add_puzzles(conn, 1)
+    add_answers(conn, "alice", {1: False})
+    add_answers(conn, "alice", {1: True}, attempt=2)
+    entry = next(e for e in db.get_leaderboard("2024-01") if e["user_id"] == "alice")
+    assert (entry["attempted"], entry["correct"], entry["incorrect"]) == (1, 1, 0)
+
+
+def test_using_every_attempt_on_open_puzzle_ends_the_streak_right_away(conn):
+    add_puzzles(conn, 3, open_={3})
+    add_answers(conn, "alice", {1: True, 2: True, 3: False})
+    add_answers(conn, "alice", {3: False}, attempt=2)
+    assert streaks("alice") == (0, 2)
+
+
 def test_deactivated_wrong_answer_on_open_puzzle_restores_the_grace(conn):
     add_puzzles(conn, 3, open_={3})
-    add_answers(conn, "alice", {1: True, 2: True})
-    add_answers(conn, "alice", {3: False}, active=False)
+    add_answers(conn, "alice", {1: True, 2: True, 3: False})
+    add_answers(conn, "alice", {3: False}, active=False, attempt=2)
     assert streaks("alice") == (2, 2)
 
 

@@ -62,6 +62,24 @@ def test_wrong_answers_do_not_take_a_podium_spot(conn):
     assert (first.score, first.podium_rank) == (15, 1)
 
 
+def test_correct_second_attempt_earns_half_and_no_podium(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    _submit("U1", correct=False, score=0)
+
+    second = _submit("U1", score=9)
+
+    assert (second.score, second.podium_rank) == (4.5, None)
+    assert _submit("U2").podium_rank == 1
+
+
+def test_correct_second_attempt_does_not_take_a_podium_spot(conn):
+    db.save_puzzle("p1", "fen", ["e4"])
+    _submit("U1", correct=False, score=0)
+    _submit("U1")
+
+    assert _submit("U2").podium_rank == 1
+
+
 def test_deactivated_podium_submission_frees_its_spot(conn):
     db.save_puzzle("p1", "fen", ["e4"])
     _submit("U1")
@@ -109,6 +127,20 @@ def test_result_dm_shows_podium_bonus():
 def test_result_dm_without_podium_has_no_bonus_line():
     puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["e4"]}
     assert "podium" not in format_result_dm(puzzle, "e4", True, 10)
+
+
+def test_result_dm_hides_the_solution_while_an_attempt_is_left():
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qh5"]}
+    text = format_result_dm(puzzle, "e4", False, 0, attempts_left=1)
+    assert "You have 1 more attempt -" in text
+    assert "Qh5" not in text
+
+
+def test_result_dm_reveals_the_solution_once_attempts_run_out():
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qh5"]}
+    text = format_result_dm(puzzle, "e4", False, 0, attempts_left=0)
+    assert "that was your last attempt" in text
+    assert "Correct answer: `Qh5`" in text
 
 
 def test_result_dm_shows_half_points_without_a_trailing_zero():

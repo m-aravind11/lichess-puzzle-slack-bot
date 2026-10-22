@@ -4,7 +4,7 @@ from datetime import datetime
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
-from scoring import PODIUM_BONUS
+from scoring import PODIUM_BONUS, RETRY_SCORE_FACTOR
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +55,24 @@ def format_month(month: str) -> str:
     return datetime.strptime(month, "%Y-%m").strftime("%B %Y")
 
 
-def format_result_dm(puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None) -> str:
+def format_result_dm(
+    puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None, attempts_left: int = 0
+) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
-    result_text = (
-        f"Correct - nice work! +{format_points(score)} points" if correct
-        else f"Not quite.\n{format_solution(puzzle['solution'])}"
-    )
+    if correct:
+        result_text = f"Correct - nice work! +{format_points(score)} points"
+    elif attempts_left:
+        result_text = (
+            f"Not quite, but you're not out yet! :muscle: You have {attempts_left} more "
+            f"{'attempt' if attempts_left == 1 else 'attempts'} - a correct answer now earns "
+            f"{format_points(RETRY_SCORE_FACTOR * 100)}% of the points. Take another look!"
+        )
+    else:
+        result_text = (
+            "Not quite, and that was your last attempt. Here's how it goes:\n"
+            f"{format_solution(puzzle['solution'])}\nBetter luck on the next one!"
+        )
     if podium_rank:
         result_text += f"\n{podium_medal(podium_rank)} (+{PODIUM_BONUS[podium_rank - 1]} podium bonus)"
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"

@@ -93,15 +93,49 @@ def test_incorrect_answer_does_not_announce_in_thread(monkeypatch):
     lichess.check_answer.return_value = False
     slack_client = _slack_client()
 
-    interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
+    interactions.handle_view_submission(slack_client, lichess, _payload("d4"))
 
     assert slack_client.chat_postMessage.call_count == 1
-    assert "Not quite" in slack_client.chat_postMessage.call_args.kwargs["text"]
+    text = slack_client.chat_postMessage.call_args.kwargs["text"]
+    assert "Not quite" in text
+    assert "Correct answer" not in text
 
 
-def test_duplicate_submission_returns_error_without_dm(monkeypatch):
+def test_incorrect_last_attempt_reveals_the_solution(monkeypatch):
     monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
-    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.DUPLICATE)))
+    monkeypatch.setattr(
+        db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 0, None, 2))
+    )
+
+    lichess = MagicMock()
+    lichess.check_answer.return_value = False
+    slack_client = _slack_client()
+
+    interactions.handle_view_submission(slack_client, lichess, _payload("d4"))
+
+    assert "Correct answer: `e4`" in slack_client.chat_postMessage.call_args.kwargs["text"]
+
+
+def test_correct_second_attempt_announcement_does_not_mention_the_attempt(monkeypatch):
+    monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle(slack_ts="1700000000.0"))
+    monkeypatch.setattr(
+        db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 3.5, None, 2))
+    )
+
+    lichess = MagicMock()
+    lichess.check_answer.return_value = True
+    slack_client = _slack_client()
+
+    interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
+
+    thread_call = slack_client.chat_postMessage.call_args_list[1]
+    assert "attempt" not in thread_call.kwargs["text"]
+    assert "+3.5 pts" in thread_call.kwargs["text"]
+
+
+def test_no_attempts_left_returns_error_without_dm(monkeypatch):
+    monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.NO_ATTEMPTS_LEFT)))
 
     lichess = MagicMock()
     lichess.check_answer.return_value = True
@@ -109,7 +143,7 @@ def test_duplicate_submission_returns_error_without_dm(monkeypatch):
 
     result = interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
 
-    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "You've already submitted an answer for this puzzle."
+    assert result["errors"][SlackActions.MOVES_BLOCK_ID] == "You've already solved this one or used up all your attempts - see you at the next puzzle!"
     slack_client.chat_postMessage.assert_not_called()
 
 

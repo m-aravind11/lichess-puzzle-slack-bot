@@ -219,6 +219,17 @@ def _0015_create_streak_bonuses_table(conn) -> None:
     """)
 
 
+def _0016_add_attempt_to_submissions(conn) -> None:
+    cur = conn.cursor()
+    if "attempt" not in _table_columns(conn, "submissions"):
+        cur.execute("ALTER TABLE submissions ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1")
+    cur.execute("DROP INDEX IF EXISTS idx_submissions_active_unique")
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_active_attempt_unique
+        ON submissions(puzzle_id, user_id, attempt) WHERE active = 1
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -235,6 +246,7 @@ MIGRATIONS = [
     ("0013_create_announced_months_table", _0013_create_announced_months_table),
     ("0014_add_podium_rank_to_submissions", _0014_add_podium_rank_to_submissions),
     ("0015_create_streak_bonuses_table", _0015_create_streak_bonuses_table),
+    ("0016_add_attempt_to_submissions", _0016_add_attempt_to_submissions),
 ]
 
 

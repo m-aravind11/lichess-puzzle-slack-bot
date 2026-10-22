@@ -1,4 +1,4 @@
-from scoring import PODIUM_BONUS
+from scoring import MAX_ATTEMPTS, PODIUM_BONUS, RETRY_SCORE_FACTOR
 
 _PODIUM_BONUS_CASES = " ".join(f"WHEN {rank} THEN {bonus}" for rank, bonus in enumerate(PODIUM_BONUS, 1))
 
@@ -77,25 +77,35 @@ class PuzzleQueries:
 
     CLOSE_IF_OPEN = "UPDATE puzzles SET closed_at = ? WHERE puzzle_id = ? AND closed_at IS NULL"
 
+    IS_OPEN = "SELECT 1 FROM puzzles WHERE puzzle_id = ? AND active = 1 AND posted_at IS NOT NULL AND closed_at IS NULL"
+
 
 class SubmissionQueries:
-    # A duplicate raises IntegrityError via the partial unique index.
-    # Podium rank is counted inside the INSERT so simultaneous solvers can't share a rank.
+    # A racing submission for the same attempt raises IntegrityError via the partial unique index.
+    # Attempt and podium rank are counted inside the INSERT so simultaneous submissions can't share either.
     INSERT_IF_OPEN = f"""
-        WITH podium AS (
-            SELECT CASE WHEN :correct = 1 AND COUNT(*) < {len(PODIUM_BONUS)} THEN COUNT(*) + 1 END AS podium_rank
+        WITH prior AS (
+            SELECT COUNT(*) AS attempts, COALESCE(MAX(correct), 0) AS solved
             FROM submissions
-            WHERE puzzle_id = :puzzle_id AND correct = 1 AND active = 1
+            WHERE puzzle_id = :puzzle_id AND user_id = :user_id AND active = 1
+        ),
+        podium AS (
+            SELECT CASE WHEN :correct = 1 AND (SELECT attempts FROM prior) = 0 AND COUNT(*) < {len(PODIUM_BONUS)}
+                        THEN COUNT(*) + 1 END AS podium_rank
+            FROM submissions
+            WHERE puzzle_id = :puzzle_id AND correct = 1 AND attempt = 1 AND active = 1
         )
-        INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, podium_rank, submitted_at, active)
+        INSERT INTO submissions (puzzle_id, user_id, user_name, moves, correct, score, podium_rank, attempt, submitted_at, active)
         SELECT :puzzle_id, :user_id, :user_name, :moves, :correct,
-               :score + CASE podium_rank {_PODIUM_BONUS_CASES} ELSE 0 END,
-               podium_rank, :submitted_at, 1
-        FROM podium
-        WHERE EXISTS (
+               :score * CASE WHEN prior.attempts = 0 THEN 1 ELSE {RETRY_SCORE_FACTOR} END
+                   + CASE podium_rank {_PODIUM_BONUS_CASES} ELSE 0 END,
+               podium_rank, prior.attempts + 1, :submitted_at, 1
+        FROM podium, prior
+        WHERE prior.attempts < {MAX_ATTEMPTS} AND prior.solved = 0
+          AND EXISTS (
             SELECT 1 FROM puzzles WHERE puzzle_id = :puzzle_id AND active = 1 AND posted_at IS NOT NULL AND closed_at IS NULL
-        )
-        RETURNING score, podium_rank
+          )
+        RETURNING score, podium_rank, attempt
     """
 
     DEACTIVATE = "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1"
@@ -112,8 +122,8 @@ class LeaderboardQueries:
 
     TOTALS = """
         SELECT s.user_id, MAX(s.user_name) AS user_name,
-               COUNT(*) AS attempted, SUM(s.correct) AS correct,
-               COUNT(*) - SUM(s.correct) AS incorrect, SUM(s.score) AS score
+               COUNT(DISTINCT s.puzzle_id) AS attempted, SUM(s.correct) AS correct,
+               COUNT(DISTINCT s.puzzle_id) - SUM(s.correct) AS incorrect, SUM(s.score) AS score
         FROM submissions s
         JOIN puzzles p ON p.puzzle_id = s.puzzle_id
         WHERE s.active = 1 AND substr(p.posted_at, 1, 7) = ?
@@ -184,8 +194,8 @@ class LeaderboardQueries:
 
     # Gaps-and-islands over active posted puzzles in post order. A run is current
     # if it reaches the latest puzzle, or the one before while the latest is open
-    # and unanswered (one answer per puzzle, so a wrong one already broke it).
-    STREAKS = """
+    # and the player still has an attempt left on it.
+    STREAKS = f"""
         WITH seq AS (
             SELECT puzzle_id, closed_at, posted_at,
                    ROW_NUMBER() OVER (ORDER BY posted_at, rowid) AS n
@@ -204,17 +214,18 @@ class LeaderboardQueries:
         latest AS (
             SELECT n, puzzle_id, closed_at IS NULL AS is_open FROM seq ORDER BY n DESC LIMIT 1
         ),
-        answered_latest AS (
-            SELECT DISTINCT s.user_id FROM submissions s JOIN latest l ON l.puzzle_id = s.puzzle_id
+        exhausted_latest AS (
+            SELECT s.user_id FROM submissions s JOIN latest l ON l.puzzle_id = s.puzzle_id
             WHERE s.active = 1
+            GROUP BY s.user_id
+            HAVING COUNT(*) >= {MAX_ATTEMPTS}
         ),
         -- At most one row per user: the single run that reaches the latest puzzle, or the
-        -- one before it while the latest is open and still unanswered (one answer per
-        -- puzzle, so a wrong one already broke it).
+        -- one before it while the latest is open and the player still has an attempt left.
         current_run AS (
             SELECT r.user_id, r.len, r.first_posted_at
             FROM runs r CROSS JOIN latest l
-            LEFT JOIN answered_latest a ON a.user_id = r.user_id
+            LEFT JOIN exhausted_latest a ON a.user_id = r.user_id
             WHERE r.last_n >= l.n - (l.is_open AND a.user_id IS NULL)
         )
         SELECT runs.user_id,

@@ -38,7 +38,7 @@ class Streaks:
 
 class SubmissionResult:
     RECORDED = "recorded"
-    DUPLICATE = "duplicate"
+    NO_ATTEMPTS_LEFT = "no_attempts_left"
     PUZZLE_CLOSED = "puzzle_closed"
 
 

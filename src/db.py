@@ -218,11 +218,12 @@ class SubmissionOutcome(NamedTuple):
     result: str
     score: float | None = None
     podium_rank: int | None = None
+    attempt: int = 1
 
 
 @_retry_stale_connection
 def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, correct: bool, score: float) -> SubmissionOutcome:
-    """`score` is the time score; the recorded score adds any podium bonus."""
+    """`score` is the time score; the recorded score applies the retry factor and any podium bonus."""
     with get_connection() as conn:
         cur = conn.cursor()
         try:
@@ -238,18 +239,22 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
             row = cur.fetchone()
         except turso_serverless.IntegrityError:
             logger.info("record_submission: duplicate puzzle=%s user=%s", puzzle_id, user_id)
-            return SubmissionOutcome(SubmissionResult.DUPLICATE)
+            return SubmissionOutcome(SubmissionResult.NO_ATTEMPTS_LEFT)
 
         if row is None:
+            cur.execute(PuzzleQueries.IS_OPEN, (puzzle_id,))
+            if cur.fetchone():
+                logger.info("record_submission: no attempts left puzzle=%s user=%s", puzzle_id, user_id)
+                return SubmissionOutcome(SubmissionResult.NO_ATTEMPTS_LEFT)
             logger.info("record_submission: closed puzzle=%s user=%s", puzzle_id, user_id)
             return SubmissionOutcome(SubmissionResult.PUZZLE_CLOSED)
 
-        recorded_score, podium_rank = row
+        recorded_score, podium_rank, attempt = row
         logger.info(
-            "record_submission: recorded puzzle=%s user=%s correct=%s score=%s podium_rank=%s",
-            puzzle_id, user_id, correct, recorded_score, podium_rank,
+            "record_submission: recorded puzzle=%s user=%s attempt=%s correct=%s score=%s podium_rank=%s",
+            puzzle_id, user_id, attempt, correct, recorded_score, podium_rank,
         )
-        return SubmissionOutcome(SubmissionResult.RECORDED, recorded_score, podium_rank)
+        return SubmissionOutcome(SubmissionResult.RECORDED, recorded_score, podium_rank, attempt)
 
 
 @_retry_stale_connection
