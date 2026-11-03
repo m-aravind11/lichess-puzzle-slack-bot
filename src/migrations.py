@@ -230,6 +230,15 @@ def _0016_add_attempt_to_submissions(conn) -> None:
     """)
 
 
+def _0017_drop_source_from_puzzles(conn) -> None:
+    if "source" in _table_columns(conn, "puzzles"):
+        conn.cursor().execute("ALTER TABLE puzzles DROP COLUMN source")
+
+
+def _0018_drop_holidays_table(conn) -> None:
+    conn.cursor().execute("DROP TABLE IF EXISTS holidays")
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -247,6 +256,8 @@ MIGRATIONS = [
     ("0014_add_podium_rank_to_submissions", _0014_add_podium_rank_to_submissions),
     ("0015_create_streak_bonuses_table", _0015_create_streak_bonuses_table),
     ("0016_add_attempt_to_submissions", _0016_add_attempt_to_submissions),
+    ("0017_drop_source_from_puzzles", _0017_drop_source_from_puzzles),
+    ("0018_drop_holidays_table", _0018_drop_holidays_table),
 ]
 
 

@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import parse_qs
 
-import requests
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +17,7 @@ from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActi
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import (
-    format_all_time_leaderboard_post, format_holiday_notice, format_leaderboard_post, format_seconds,
+    format_all_time_leaderboard_post, format_leaderboard_post, format_seconds,
     format_solution_reveal,
 )
 from standings import build_all_time_standings, build_standings, compute_streak_bonus_candidates
@@ -84,10 +83,6 @@ async def houses_page():
 async def leaderboard_page():
     return FileResponse(Paths.LEADERBOARD_HTML_PATH)
 
-@app.get('/holidays')
-async def holidays_page():
-    return FileResponse(Paths.HOLIDAYS_HTML_PATH)
-
 @app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_cron_auth)])
 async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
     try:
@@ -97,23 +92,14 @@ async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False,
         raise
     return Response(status_code=200)
 
-@app.post('/admin/puzzles', dependencies=[Depends(require_admin_auth)])
-async def queue_puzzle(request: Request):
-    body = await request.json()
-    puzzle_id = str(body.get('puzzleId', '')).strip()
-    if not puzzle_id:
-        raise HTTPException(status_code=400, detail="puzzleId is required")
-
-    # Resolved now, so a bad id fails here rather than at cron time.
+@app.post('/admin/dailyPuzzle:prepare', dependencies=[Depends(require_cron_auth)])
+async def prepare_daily_puzzle():
     try:
-        raw_puzzle = lichess.get_puzzle_by_id(puzzle_id)
-    except requests.HTTPError:
-        raise HTTPException(status_code=502, detail="Could not fetch puzzleId from Lichess")
-
-    fen, resolved_id, solution = lichess.resolve_puzzle(raw_puzzle)
-    if not db.queue_puzzle(resolved_id, fen, solution):
-        raise HTTPException(status_code=409, detail="Puzzle already exists")
-    return Response(status_code=201)
+        lichess.prepare_next_puzzle()
+    except Exception:
+        logger.exception("admin/dailyPuzzle:prepare failed")
+        raise
+    return Response(status_code=200)
 
 @app.get('/admin/puzzles', dependencies=[Depends(require_admin_auth)])
 async def list_puzzles(state: str | None = None):
@@ -122,7 +108,6 @@ async def list_puzzles(state: str | None = None):
     return [
         {
             "puzzleId": row["puzzle_id"],
-            "source": row["source"],
             "addedAt": row["added_at"],
             "postedAt": row["posted_at"],
             "active": bool(row["active"]),
@@ -197,16 +182,9 @@ def _reveal_previous_solution(date_str: str) -> None:
 
 @app.post('/admin/puzzle:revealSolution', dependencies=[Depends(require_cron_auth)])
 async def reveal_puzzle_solution():
-    today = datetime.now(timezone.utc)
-    date_str = today.strftime("%Y-%m-%d")
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     try:
         _reveal_previous_solution(date_str)
-        # Sent from the earliest cron so the channel hears before the usual puzzle time.
-        if db.is_holiday(date_str):
-            slack_client.chat_postMessage(
-                channel=lichess.SLACK_CHANNEL_ID,
-                text=format_holiday_notice(lichess.next_puzzle_date(today)),
-            )
     except Exception:
         logger.exception("admin/puzzle:revealSolution failed")
         raise
@@ -215,13 +193,7 @@ async def reveal_puzzle_solution():
 @app.post('/admin/leaderboard:send', dependencies=[Depends(require_cron_auth)])
 async def send_leaderboard():
     try:
-        # Before the holiday check, so storing doesn't wait for a puzzle day.
         db.store_finished_months()
-
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if db.is_holiday(date_str):
-            logger.info("admin/leaderboard:send: %s is a holiday, skipping", date_str)
-            return Response(status_code=200)
 
         # Driven by what's stored, not the latest puzzle, so a missed run on the 1st catches up later.
         finished_months = db.list_unannounced_months()
@@ -251,7 +223,9 @@ async def send_leaderboard():
         # Written and folded into the board *before* build_standings, so the posted
         # leaderboard's points and house totals already reflect today's bonus instead
         # of lagging a day behind the milestone line announcing it.
-        increments = db.record_streak_bonuses(compute_streak_bonus_candidates(board), end_date=date_str)
+        increments = db.record_streak_bonuses(
+            compute_streak_bonus_candidates(board), end_date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        )
         for entry in board:
             entry["score"] += increments.get(entry["user_id"], 0)
         board = db.sort_leaderboard(board)
@@ -389,28 +363,3 @@ async def get_leaderboard(month: str | None = None):
             for m in standings["milestones"]
         ],
     }
-
-def _parse_holiday_date(date: str) -> str:
-    # Not date.fromisoformat, which also accepts compact forms like 20240101.
-    try:
-        return datetime.strptime(date, "%Y-%m-%d").strftime("%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
-
-@app.get('/admin/holidays', dependencies=[Depends(require_admin_auth)])
-async def list_holidays():
-    return [{"date": date} for date in db.list_holidays()]
-
-@app.put('/admin/holidays/{date}', dependencies=[Depends(require_admin_auth)])
-async def add_holiday(date: str):
-    date = _parse_holiday_date(date)
-    if date < datetime.now(timezone.utc).strftime("%Y-%m-%d"):
-        raise HTTPException(status_code=400, detail="date is in the past")
-    db.add_holiday(date)
-    return {"date": date}
-
-@app.delete('/admin/holidays/{date}', dependencies=[Depends(require_admin_auth)])
-async def remove_holiday(date: str):
-    if not db.remove_holiday(_parse_holiday_date(date)):
-        raise HTTPException(status_code=404, detail="Not a holiday")
-    return Response(status_code=200)

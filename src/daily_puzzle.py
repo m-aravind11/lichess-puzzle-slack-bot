@@ -3,7 +3,7 @@ import logging
 import os
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import requests
 
 import chess.pgn
@@ -11,7 +11,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
-from constants import Schedule, SlackActions
+from constants import SlackActions
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +28,15 @@ class Constants:
     )
     PATTERN_FETCH_ATTEMPTS = 3
     LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty=easier"
-    LICHESS_PUZZLE_BY_ID_URL = "https://lichess.org/api/puzzle/{puzzle_id}"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
-    FETCH_RETRIES = 2
-    FETCH_RETRY_DELAY_SECONDS = 3
+    FETCH_TIMEOUT_SECONDS = 10
+    FETCH_RETRY_DELAYS_SECONDS = (1, 3)
+
+def _is_retryable(error: requests.RequestException) -> bool:
+    # Lichess wants a full minute after a 429, longer than is worth blocking on.
+    if isinstance(error, requests.HTTPError):
+        return error.response.status_code >= 500
+    return isinstance(error, (requests.Timeout, requests.ConnectionError))
 
 class LichessDailyPuzzle:
     def __init__(self):
@@ -40,20 +45,18 @@ class LichessDailyPuzzle:
 
     def _fetch_json_with_retries(self, url: str) -> dict:
         # The cron doesn't retry a failed run, so retry here.
-        attempts = Constants.FETCH_RETRIES + 1
-        for attempt in range(1, attempts + 1):
-            response = requests.get(url)
+        attempts = len(Constants.FETCH_RETRY_DELAYS_SECONDS) + 1
+        for attempt, delay in enumerate((*Constants.FETCH_RETRY_DELAYS_SECONDS, None), 1):
             try:
+                response = requests.get(url, timeout=Constants.FETCH_TIMEOUT_SECONDS)
                 response.raise_for_status()
                 return response.json()
-            except requests.HTTPError:
-                logger.error(
-                    "Lichess puzzle fetch failed (attempt %d/%d): %s %s",
-                    attempt, attempts, response.status_code, response.text[:500],
-                )
-                if attempt == attempts:
+            except requests.RequestException as e:
+                body = e.response.text[:500] if e.response is not None else ""
+                logger.error("Lichess puzzle fetch failed (attempt %d/%d): %s %s", attempt, attempts, e, body)
+                if delay is None or not _is_retryable(e):
                     raise
-                time.sleep(Constants.FETCH_RETRY_DELAY_SECONDS)
+                time.sleep(delay)
 
     def _fetch_random_puzzle(self, theme: str) -> dict:
         return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL.format(theme=theme))
@@ -65,9 +68,6 @@ class LichessDailyPuzzle:
             if set(puzzle['puzzle']['themes']) & set(Constants.MATE_LENGTH_THEMES):
                 break
         return puzzle
-
-    def get_puzzle_by_id(self, puzzle_id: str) -> dict:
-        return self._fetch_json_with_retries(Constants.LICHESS_PUZZLE_BY_ID_URL.format(puzzle_id=puzzle_id))
 
     def resolve_puzzle(self, daily_puzzle: dict) -> tuple[str, str, list]:
         pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
@@ -215,19 +215,21 @@ class LichessDailyPuzzle:
         )
         db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
 
-    def next_puzzle_date(self, today: datetime) -> datetime:
-        holidays = set(db.list_holidays())
-        day = today + timedelta(days=1)
-        while day.weekday() not in Schedule.PUZZLE_WEEKDAYS or day.strftime("%Y-%m-%d") in holidays:
-            day += timedelta(days=1)
-        return day
-
     def _fetch_new_puzzle(self) -> tuple[str, str, list]:
         queued = db.get_next_queued_puzzle()
         if queued:
             return queued["fen"], queued["puzzle_id"], queued["solution"]
 
         return self.resolve_puzzle(self.get_random_puzzle())
+
+    def prepare_next_puzzle(self) -> None:
+        queued = db.get_next_queued_puzzle()
+        if queued:
+            logger.info("Puzzle %s already queued, skipping", queued["puzzle_id"])
+            return
+
+        fen, puzzle_id, san_solution = self.resolve_puzzle(self.get_random_puzzle())
+        db.queue_puzzle(puzzle_id, fen, san_solution)
 
     def _post_and_save_puzzle(self, fen: str, puzzle_id: str, san_solution: list, today: datetime) -> None:
         thread_ts = self.send_puzzle_to_slack(
@@ -263,10 +265,6 @@ class LichessDailyPuzzle:
                 self._resend_puzzle(existing, today)
                 return
             self._generate_and_send_puzzle(today)
-            return
-
-        if db.is_holiday(date_str):
-            logger.info("%s is a holiday, skipping", date_str)
             return
 
         if db.puzzle_sent_for_date(date_str):

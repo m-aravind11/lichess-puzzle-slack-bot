@@ -19,8 +19,8 @@ def conn():
     migrations.run_migrations(connection)
     for i in range(1, 4):
         connection.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, slack_ts, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, ?, 1, ?)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, slack_ts, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, ?, 1, ?)",
             (f"p{i}", f"2024-01-0{i}T12:00:00+00:00", f"2024-01-0{i}T12:00:00+00:00",
              str(1704110400 + (i - 1) * 86400), f"2024-01-0{i + 1}T06:00:00+00:00"),
         )
