@@ -32,24 +32,26 @@ MAX_ATTEMPTS = 2
 # Share of the time score a correct later attempt earns; it never gets a podium bonus.
 RETRY_SCORE_FACTOR = 0.5
 
-# Counts toward the real leaderboard total, so the ceiling stays proportionate to what
-# daily play can earn (max ~15/day): the 365-day milestone tops out under ten days of
-# normal scoring, not a month and a half of it. Cumulative target per milestone length
-# in days (constants.Streaks.MILESTONES) -- what a run is worth in total once it reaches
-# that length, not a per-crossing increment. db.record_streak_bonuses derives the
-# incremental amount actually credited at each crossing from these cumulative values.
+# Cumulative total a run is worth once it reaches each length, not a per-crossing increment.
+# Bonus per streak day must never fall between milestones, so longer runs earn proportionately more.
 STREAK_BONUS = {
-    3: 3,
-    7: 5,
-    14: 10,
-    30: 25,
+    3: 1,
+    7: 3,
+    14: 7,
+    30: 18,
     50: 35,
-    100: 60,
-    150: 80,
-    200: 95,
-    250: 110,
-    300: 120,
-    365: 130,
+    75: 57,
+    100: 80,
+    125: 106,
+    150: 135,
+    175: 166,
+    200: 200,
+    225: 236,
+    250: 275,
+    275: 316,
+    300: 360,
+    325: 404,
+    365: 475,
 }
 
 
