@@ -13,6 +13,13 @@ def test_streak_bonus_values_strictly_increase_with_milestone_length():
     assert all(b > a for a, b in zip(values, values[1:]))
 
 
+def test_streak_bonus_per_day_never_falls_between_milestones():
+    lengths = (0, *Streaks.MILESTONES)
+    totals = (0, *(STREAK_BONUS[m] for m in Streaks.MILESTONES))
+    per_day = [(totals[i + 1] - totals[i]) / (lengths[i + 1] - lengths[i]) for i in range(len(lengths) - 1)]
+    assert all(b >= a for a, b in zip(per_day, per_day[1:]))
+
+
 def test_every_milestone_has_a_bonus_value():
     assert set(STREAK_BONUS) == set(Streaks.MILESTONES)
 

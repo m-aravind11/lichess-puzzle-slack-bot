@@ -27,7 +27,7 @@ class SlackActions:
 
 class Streaks:
     # Matched exactly, not >=, so each is announced once, the day it's hit.
-    MILESTONES = (3, 7, 14, 30, 50, 100, 150, 200, 250, 300, 365)
+    MILESTONES = (3, 7, 14, 30, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 365)
 
 
 class SubmissionResult:
