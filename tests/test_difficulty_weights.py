@@ -8,7 +8,6 @@ import app as app_module
 import db
 import migrations
 from constants import Security
-from daily_puzzle import LichessDailyPuzzle
 
 AUTH = {"Authorization": "Bearer s3cr3t"}
 DEFAULTS = {"easiest": 20, "easier": 50, "normal": 15, "harder": 10, "hardest": 5}
@@ -76,13 +75,3 @@ def test_difficulty_page_is_served(client):
 
     assert response.status_code == 200
     assert "/admin/difficultyWeights" in response.text
-
-
-@pytest.mark.parametrize("difficulty,rating,label", [
-    ("easier", 1243, "Easier, rated 1243"),
-    ("hardest", None, "Hardest"),
-    (None, 1500, "rated 1500"),
-    (None, None, ""),
-])
-def test_difficulty_label(difficulty, rating, label):
-    assert LichessDailyPuzzle().difficulty_label(difficulty, rating) == label

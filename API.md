@@ -55,7 +55,7 @@ by all the pages, so unlocking one unlocks the others. Shared page code lives in
 Fetches a random Lichess puzzle and queues it, so the send only reads the
 queue and posts to Slack. Its difficulty is picked at random using the
 weights from `PUT /admin/difficultyWeights`, and stored with the puzzle's
-Lichess rating to show on the Slack post. A no-op if anything is already queued, so it's safe
+Lichess rating. A no-op if anything is already queued, so it's safe
 to retrigger.
 
 The cron worker calls it right after `POST /admin/dailyPuzzle:send` to queue

@@ -156,18 +156,9 @@ class LichessDailyPuzzle:
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
 
-    def difficulty_label(self, difficulty: str | None, rating: int | None) -> str:
-        parts = [difficulty.capitalize() if difficulty else None, f"rated {rating}" if rating else None]
-        return ", ".join(p for p in parts if p)
-
-    def send_puzzle_to_slack(
-        self, board, date_str: str, puzzle_id: str, image_link: str, num_moves: int, is_mate: bool = False,
-        difficulty: str | None = None, rating: int | None = None,
-    ) -> str | None:
+    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str,num_moves: int,is_mate: bool = False) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
         move_label = f"mate in {num_moves}" if is_mate else f"{num_moves} {'move' if num_moves == 1 else 'moves'}"
-        difficulty_label = self.difficulty_label(difficulty, rating)
-        difficulty_suffix = f" · {difficulty_label}" if difficulty_label else ""
 
         try:
             root = slack_client.chat_postMessage(
@@ -180,7 +171,7 @@ class LichessDailyPuzzle:
                             "type": "mrkdwn",
                             "text": (
                                 f"<!channel> *Puzzle for the day ({date_str})*\n"
-                                f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`{difficulty_suffix}\n\n"
+                                f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`\n\n"
                                 f"Click *Submit Answer* below and *ENTER YOUR OWN MOVES ONLY*, e.g. `Nf3 Bb5` "
                                 f"(your opponent's replies are added automatically). You'll get the result by DM."
                             ),
@@ -217,8 +208,6 @@ class LichessDailyPuzzle:
             self.get_image_link_from_fen(self.encode_fen_for_url(puzzle['fen'])),
             len(puzzle['solution'][0::2]),
             puzzle['solution'][-1].endswith('#'),
-            puzzle.get('difficulty'),
-            puzzle.get('rating'),
         )
 
     def _resend_puzzle(self, existing: dict, today: datetime) -> None:
