@@ -13,9 +13,8 @@ slabs, the podium bonus and streak milestone bonuses (README's Scoring
 section).
 
 ## Weight scoring by difficulty
-Each puzzle's difficulty and Lichess rating are now stored and shown on the
-Slack post; scoring could weight by them. Themes are still discarded, since
-showing them (e.g. smotheredMate) would give the answer away.
+Each puzzle's difficulty and Lichess rating are now stored; scoring could
+weight by them.
 
 ## Personal stats lookup
 Slash command or DM ("my stats") giving a user their own rank, streak, avg

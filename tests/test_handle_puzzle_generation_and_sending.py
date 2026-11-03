@@ -62,7 +62,6 @@ def test_generates_and_saves_a_fresh_puzzle_when_none_sent_today(monkeypatch):
 
     lichess.get_random_puzzle.assert_called_once_with("harder")
     lichess.send_puzzle_to_slack.assert_called_once()
-    assert lichess.send_puzzle_to_slack.call_args.args[6:] == ("harder", 1234)
     db.save_puzzle.assert_called_once()
     assert db.save_puzzle.call_args.kwargs["puzzle_id"] == "new1"
     assert db.save_puzzle.call_args.kwargs["difficulty"] == "harder"
@@ -77,7 +76,6 @@ def test_force_resends_the_existing_puzzle_without_fetching_a_new_one(monkeypatc
     lichess.get_random_puzzle.assert_not_called()
     lichess.send_puzzle_to_slack.assert_called_once()
     assert lichess.send_puzzle_to_slack.call_args.args[2] == "p1"
-    assert lichess.send_puzzle_to_slack.call_args.args[6:] == ("normal", 1500)
     db.update_puzzle_slack_ts.assert_called_once_with("p1", "1700000000.0")
     db.save_puzzle.assert_not_called()
 

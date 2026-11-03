@@ -28,8 +28,7 @@ Each person gets their result by DM, and a leaderboard keeps score.
 - **Houses.** Players can be grouped into teams that compete on a house
   leaderboard.
 - **Difficulty mix.** Each puzzle's Lichess difficulty (easiest to hardest)
-  is picked at random, weighted towards the easier ones by default. The
-  difficulty and puzzle rating are shown on the Slack post.
+  is picked at random, weighted towards the easier ones by default.
 
 The leaderboard, houses and difficulty web pages are linked from the home
 page and ask for the admin secret.
