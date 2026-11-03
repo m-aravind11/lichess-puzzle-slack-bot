@@ -239,6 +239,29 @@ def _0018_drop_holidays_table(conn) -> None:
     conn.cursor().execute("DROP TABLE IF EXISTS holidays")
 
 
+def _0019_add_difficulty_to_puzzles(conn) -> None:
+    columns = _table_columns(conn, "puzzles")
+    if "difficulty" not in columns:
+        conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN difficulty TEXT")
+    if "rating" not in columns:
+        conn.cursor().execute("ALTER TABLE puzzles ADD COLUMN rating INTEGER")
+
+
+def _0020_create_puzzle_difficulty_weights_table(conn) -> None:
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS puzzle_difficulty_weights (
+            difficulty TEXT PRIMARY KEY,
+            weight INTEGER NOT NULL
+        )
+    """)
+    cur.execute("""
+        INSERT INTO puzzle_difficulty_weights (difficulty, weight)
+        VALUES ('easiest', 20), ('easier', 50), ('normal', 15), ('harder', 10), ('hardest', 5)
+        ON CONFLICT(difficulty) DO NOTHING
+    """)
+
+
 MIGRATIONS = [
     ("0001_create_puzzles_table", _0001_create_puzzles_table),
     ("0002_create_submissions_table", _0002_create_submissions_table),
@@ -258,6 +281,8 @@ MIGRATIONS = [
     ("0016_add_attempt_to_submissions", _0016_add_attempt_to_submissions),
     ("0017_drop_source_from_puzzles", _0017_drop_source_from_puzzles),
     ("0018_drop_holidays_table", _0018_drop_holidays_table),
+    ("0019_add_difficulty_to_puzzles", _0019_add_difficulty_to_puzzles),
+    ("0020_create_puzzle_difficulty_weights_table", _0020_create_puzzle_difficulty_weights_table),
 ]
 
 

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from slack_sdk import WebClient
 
 import db
-from constants import Paths, PlayerHouseResult, PuzzleState, Security, SlackActions
+from constants import Paths, PlayerHouseResult, PuzzleDifficulty, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from slack_helpers import (
@@ -83,6 +83,10 @@ async def houses_page():
 async def leaderboard_page():
     return FileResponse(Paths.LEADERBOARD_HTML_PATH)
 
+@app.get('/difficulty')
+async def difficulty_page():
+    return FileResponse(Paths.DIFFICULTY_HTML_PATH)
+
 @app.post('/admin/dailyPuzzle:send', dependencies=[Depends(require_cron_auth)])
 async def send_daily_puzzle(force: bool = False, new_puzzle: bool = Query(False, alias="newPuzzle")):
     try:
@@ -114,6 +118,23 @@ async def list_puzzles(state: str | None = None):
         }
         for row in db.list_puzzles(state)
     ]
+
+@app.get('/admin/difficultyWeights', dependencies=[Depends(require_admin_auth)])
+async def get_difficulty_weights():
+    return db.get_difficulty_weights()
+
+@app.put('/admin/difficultyWeights', dependencies=[Depends(require_admin_auth)])
+async def set_difficulty_weights(request: Request):
+    weights = await request.json()
+    if not isinstance(weights, dict) or set(weights) != set(PuzzleDifficulty.LEVELS):
+        raise HTTPException(status_code=400, detail=f"weights must have exactly: {', '.join(PuzzleDifficulty.LEVELS)}")
+    # bool is an int subclass, so reject it explicitly.
+    if not all(isinstance(w, int) and not isinstance(w, bool) and 0 <= w <= 100 for w in weights.values()):
+        raise HTTPException(status_code=400, detail="each weight must be an integer from 0 to 100")
+    if sum(weights.values()) != 100:
+        raise HTTPException(status_code=400, detail="weights must add up to 100")
+    db.set_difficulty_weights(weights)
+    return {level: weights[level] for level in PuzzleDifficulty.LEVELS}
 
 @app.post('/admin/migrations:run', dependencies=[Depends(require_admin_auth)])
 async def run_migrations():

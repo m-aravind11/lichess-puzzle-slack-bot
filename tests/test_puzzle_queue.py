@@ -42,7 +42,9 @@ def test_next_queued_puzzle_is_fifo_and_advances_once_posted(conn):
     db.queue_puzzle("q1", "fen1", ["e4"])
     db.queue_puzzle("q2", "fen2", ["d4"])
 
-    assert db.get_next_queued_puzzle() == {"puzzle_id": "q1", "fen": "fen1", "solution": ["e4"]}
+    assert db.get_next_queued_puzzle() == {
+        "puzzle_id": "q1", "fen": "fen1", "solution": ["e4"], "difficulty": None, "rating": None,
+    }
     assert db.get_next_queued_puzzle()["puzzle_id"] == "q1"
 
     db.save_puzzle("q1", "fen1", ["e4"])
@@ -114,7 +116,7 @@ def test_migrations_keep_existing_puzzles_as_posted(monkeypatch):
     migrations.run_migrations(connection)
 
     columns = [row[1] for row in connection.execute("PRAGMA table_info(puzzles)")]
-    assert columns == ["puzzle_id", "fen", "solution", "added_at", "posted_at", "slack_ts", "active", "closed_at"]
+    assert columns == ["puzzle_id", "fen", "solution", "added_at", "posted_at", "slack_ts", "active", "closed_at", "difficulty", "rating"]
 
     rows = connection.execute("SELECT puzzle_id, fen, solution, added_at, posted_at, slack_ts, active FROM puzzles").fetchall()
     posted_at = "2026-09-18T11:30:57.799+00:00"

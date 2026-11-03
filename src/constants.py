@@ -6,6 +6,7 @@ class Paths:
     INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
     HOUSES_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'houses.html')
     LEADERBOARD_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'leaderboard.html')
+    DIFFICULTY_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'difficulty.html')
 
 
 class Security:
@@ -39,6 +40,11 @@ class SubmissionResult:
 class PuzzleState:
     QUEUED = "queued"
     POSTED = "posted"
+
+
+class PuzzleDifficulty:
+    # Lichess's difficulty values, easiest first.
+    LEVELS = ("easiest", "easier", "normal", "harder", "hardest")
 
 
 class PuzzleResult:

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Difficulty - Lichess Puzzle Bot</title>
+<link rel="icon" href="/static/favicon.png" type="image/png" sizes="64x64">
+<link rel="stylesheet" href="/static/admin.css">
+<style>
+  .mix {
+    display: flex;
+    height: 14px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .mix span { transition: flex-basis 0.15s ease; }
+
+  .level {
+    display: grid;
+    grid-template-columns: 12px 110px minmax(0, 1fr) 84px;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; }
+  .label strong { display: block; font-weight: 600; }
+  .label span { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .level input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .pct { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .pct input {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 8px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .footer { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  .total { flex: 1; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .total strong { color: var(--fg); }
+  .total.off strong { color: var(--warn); }
+  .btn-quiet { background: transparent; color: var(--muted); font-weight: 500; }
+  .btn-quiet:hover { color: var(--fg); }
+
+  .note { color: var(--muted); font-size: 0.85rem; line-height: 1.5; margin: 14px 2px 0; }
+
+  @media (max-width: 480px) {
+    .level { grid-template-columns: 12px minmax(0, 1fr) 76px; gap: 10px; padding: 12px; }
+    .level input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/"><img class="brand-icon" src="/static/knight.png" alt=""><span class="brand-text">Lichess Puzzle Bot</span></a>
+    <nav aria-label="Pages"><a href="/leaderboard">Leaderboard</a><a href="/houses">Houses</a><a href="/difficulty" aria-current="page">Difficulty</a></nav>
+  </div>
+</header>
+<main>
+  <h1>Puzzle difficulty</h1>
+  <p class="sub">How often each Lichess difficulty is picked when a new puzzle is fetched. Percentages must add up to 100.</p>
+
+  <p class="loading" id="loading" hidden>Loading…</p>
+
+  <section id="unlockSection" hidden>
+    <form class="card unlock" id="unlockForm">
+      <p>Enter the admin secret to continue. It's kept only for this browser tab.</p>
+      <div class="row">
+        <input type="password" id="secret" placeholder="Admin secret" autocomplete="current-password" required>
+        <button class="btn-primary" type="submit">Unlock</button>
+      </div>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <div class="mix" id="mix" aria-hidden="true"></div>
+    <form class="card" id="weightsForm">
+      <div id="levels"></div>
+      <div class="footer">
+        <span class="total" id="total"></span>
+        <button class="btn-quiet" type="button" id="reset">Reset</button>
+        <button class="btn-primary" type="submit" id="save">Save</button>
+      </div>
+    </form>
+    <p class="note">
+      Ratings are approximate; Lichess picks relative to a 1500 rating. Changes apply to the next
+      puzzle fetched; one already queued keeps its difficulty.
+    </p>
+  </div>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/static/admin.js"></script>
+<script>
+  (function () {
+    var LEVELS = [
+      { key: 'easiest', name: 'Easiest', rating: '≈ 900', shade: 100 },
+      { key: 'easier', name: 'Easier', rating: '≈ 1200', shade: 80 },
+      { key: 'normal', name: 'Normal', rating: '≈ 1500', shade: 62 },
+      { key: 'harder', name: 'Harder', rating: '≈ 1800', shade: 46 },
+      { key: 'hardest', name: 'Hardest', rating: '≈ 2100', shade: 32 }
+    ];
+    var state = { saved: {}, draft: {} };
+    var inputs = {};
+
+    var api = Admin.api, el = Admin.el, toast = Admin.toast;
+
+    function color(level) {
+      return 'color-mix(in srgb, var(--accent) ' + level.shade + '%, var(--surface-2))';
+    }
+
+    function load() {
+      return api('GET', '/admin/difficultyWeights').then(function (weights) {
+        state.saved = weights;
+        state.draft = Object.assign({}, weights);
+        Admin.showApp();
+        renderLevels();
+        update();
+      });
+    }
+
+    function renderLevels() {
+      var container = document.getElementById('levels');
+      container.textContent = '';
+      LEVELS.forEach(function (level) {
+        var row = el('div', 'level');
+        var swatch = el('span', 'swatch');
+        swatch.style.background = color(level);
+        row.appendChild(swatch);
+
+        var label = el('div', 'label');
+        label.appendChild(el('strong', null, level.name));
+        label.appendChild(el('span', null, level.rating));
+        row.appendChild(label);
+
+        var range = el('input');
+        range.type = 'range';
+        range.min = 0;
+        range.max = 100;
+        range.setAttribute('aria-label', level.name + ' percentage');
+        row.appendChild(range);
+
+        var pct = el('label', 'pct');
+        var number = el('input');
+        number.type = 'number';
+        number.min = 0;
+        number.max = 100;
+        number.step = 1;
+        number.inputMode = 'numeric';
+        number.setAttribute('aria-label', level.name + ' percentage');
+        pct.appendChild(number);
+        pct.appendChild(document.createTextNode('%'));
+        row.appendChild(pct);
+
+        [range, number].forEach(function (input) {
+          input.addEventListener('input', function () {
+            var value = parseInt(input.value, 10);
+            state.draft[level.key] = isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
+            update(input);
+          });
+        });
+        inputs[level.key] = { range: range, number: number };
+        container.appendChild(row);
+      });
+    }
+
+    function total() {
+      return LEVELS.reduce(function (sum, level) { return sum + state.draft[level.key]; }, 0);
+    }
+
+    function dirty() {
+      return LEVELS.some(function (level) { return state.draft[level.key] !== state.saved[level.key]; });
+    }
+
+    // Skips the input being typed in, so clearing a number field doesn't snap it back to 0.
+    function update(source) {
+      LEVELS.forEach(function (level) {
+        var value = state.draft[level.key];
+        var pair = inputs[level.key];
+        if (pair.range !== source) pair.range.value = value;
+        if (pair.number !== source) pair.number.value = value;
+      });
+
+      var mix = document.getElementById('mix');
+      mix.textContent = '';
+      var sum = total();
+      LEVELS.forEach(function (level) {
+        var segment = el('span');
+        segment.style.flexBasis = (sum ? state.draft[level.key] / Math.max(sum, 100) * 100 : 0) + '%';
+        segment.style.background = color(level);
+        mix.appendChild(segment);
+      });
+
+      var totalNode = document.getElementById('total');
+      totalNode.textContent = 'Total ';
+      totalNode.appendChild(el('strong', null, sum + '%'));
+      if (sum !== 100) totalNode.appendChild(document.createTextNode(sum < 100 ? ' · ' + (100 - sum) + ' to go' : ' · ' + (sum - 100) + ' over'));
+      totalNode.classList.toggle('off', sum !== 100);
+
+      document.getElementById('save').disabled = sum !== 100 || !dirty();
+      document.getElementById('reset').disabled = !dirty();
+    }
+
+    document.getElementById('reset').addEventListener('click', function () {
+      state.draft = Object.assign({}, state.saved);
+      update();
+    });
+
+    document.getElementById('weightsForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var save = document.getElementById('save');
+      save.disabled = true;
+      api('PUT', '/admin/difficultyWeights', state.draft).then(function (weights) {
+        state.saved = weights;
+        state.draft = Object.assign({}, weights);
+        update();
+        toast('Saved');
+      }).catch(function (err) {
+        toast(err.message, true);
+        update();
+      });
+    });
+
+    Admin.start(load);
+  })();
+</script>
+</body>
+</html>

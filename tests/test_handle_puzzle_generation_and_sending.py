@@ -6,13 +6,15 @@ from daily_puzzle import LichessDailyPuzzle
 
 LICHESS_RESPONSE = {
     "game": {"pgn": "1. e4 e5"},
-    "puzzle": {"id": "new1", "solution": ["g1f3"]},  # Nf3 - legal for white after 1. e4 e5
+    "puzzle": {"id": "new1", "solution": ["g1f3"], "rating": 1234},  # Nf3 - legal for white after 1. e4 e5
 }
 
 QUEUED_PUZZLE = {
     "puzzle_id": "queued1",
     "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
     "solution": ["Nf3"],
+    "difficulty": "easiest",
+    "rating": 900,
 }
 
 EXISTING = {
@@ -21,6 +23,8 @@ EXISTING = {
     "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
     "solution": ["Nf3"],
     "slack_ts": "1600000000.0",
+    "difficulty": "normal",
+    "rating": 1500,
 }
 
 
@@ -31,6 +35,7 @@ def _run(coro):
 def _lichess(monkeypatch, existing_active=None, sent_today=False):
     lichess = LichessDailyPuzzle()
     monkeypatch.setattr(lichess, "get_random_puzzle", MagicMock(return_value=LICHESS_RESPONSE))
+    monkeypatch.setattr(lichess, "pick_difficulty", MagicMock(return_value="harder"))
     monkeypatch.setattr(lichess, "send_puzzle_to_slack", MagicMock(return_value="1700000000.0"))
     monkeypatch.setattr(db, "get_active_puzzle_by_date", MagicMock(return_value=existing_active))
     monkeypatch.setattr(db, "puzzle_sent_for_date", MagicMock(return_value=sent_today))
@@ -55,10 +60,13 @@ def test_generates_and_saves_a_fresh_puzzle_when_none_sent_today(monkeypatch):
 
     _run(lichess.handle_puzzle_generation_and_sending())
 
-    lichess.get_random_puzzle.assert_called_once()
+    lichess.get_random_puzzle.assert_called_once_with("harder")
     lichess.send_puzzle_to_slack.assert_called_once()
+    assert lichess.send_puzzle_to_slack.call_args.args[6:] == ("harder", 1234)
     db.save_puzzle.assert_called_once()
     assert db.save_puzzle.call_args.kwargs["puzzle_id"] == "new1"
+    assert db.save_puzzle.call_args.kwargs["difficulty"] == "harder"
+    assert db.save_puzzle.call_args.kwargs["rating"] == 1234
 
 
 def test_force_resends_the_existing_puzzle_without_fetching_a_new_one(monkeypatch):
@@ -69,6 +77,7 @@ def test_force_resends_the_existing_puzzle_without_fetching_a_new_one(monkeypatc
     lichess.get_random_puzzle.assert_not_called()
     lichess.send_puzzle_to_slack.assert_called_once()
     assert lichess.send_puzzle_to_slack.call_args.args[2] == "p1"
+    assert lichess.send_puzzle_to_slack.call_args.args[6:] == ("normal", 1500)
     db.update_puzzle_slack_ts.assert_called_once_with("p1", "1700000000.0")
     db.save_puzzle.assert_not_called()
 
@@ -93,6 +102,7 @@ def test_uses_the_next_queued_puzzle_when_there_is_one(monkeypatch):
     db.save_puzzle.assert_called_once()
     assert db.save_puzzle.call_args.kwargs["puzzle_id"] == "queued1"
     assert db.save_puzzle.call_args.kwargs["fen"] == QUEUED_PUZZLE["fen"]
+    assert db.save_puzzle.call_args.kwargs["difficulty"] == "easiest"
 
 
 def test_new_puzzle_flag_always_fetches_fresh_even_if_already_sent(monkeypatch):

@@ -1,3 +1,4 @@
+from constants import PuzzleDifficulty
 from scoring import MAX_ATTEMPTS, PODIUM_BONUS, RETRY_SCORE_FACTOR
 
 _PODIUM_BONUS_CASES = " ".join(f"WHEN {rank} THEN {bonus}" for rank, bonus in enumerate(PODIUM_BONUS, 1))
@@ -27,15 +28,15 @@ class PuzzleQueries:
     """
 
     INSERT_QUEUED = """
-        INSERT INTO puzzles (puzzle_id, fen, solution, added_at, active)
-        VALUES (?, ?, ?, ?, 1)
+        INSERT INTO puzzles (puzzle_id, fen, solution, difficulty, rating, added_at, active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(puzzle_id) DO NOTHING
     """
 
     # An already-posted row is left untouched, so a resend keeps its original post time.
     UPSERT_POSTED = """
-        INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, slack_ts, active)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO puzzles (puzzle_id, fen, solution, difficulty, rating, added_at, posted_at, slack_ts, active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(puzzle_id) DO UPDATE SET
             posted_at = excluded.posted_at,
             slack_ts = excluded.slack_ts,
@@ -44,7 +45,7 @@ class PuzzleQueries:
     """
 
     GET_NEXT_QUEUED = """
-        SELECT puzzle_id, fen, solution FROM puzzles
+        SELECT puzzle_id, fen, solution, difficulty, rating FROM puzzles
         WHERE posted_at IS NULL AND active = 1
         ORDER BY added_at ASC, rowid ASC LIMIT 1
     """
@@ -295,3 +296,13 @@ class PlayerQueries:
     """
 
     UNASSIGN = "UPDATE player_houses SET active = 0 WHERE user_id = ? AND active = 1"
+
+
+class DifficultyQueries:
+    LIST = "SELECT difficulty, weight FROM puzzle_difficulty_weights"
+
+    UPSERT_ALL = f"""
+        INSERT INTO puzzle_difficulty_weights (difficulty, weight)
+        VALUES {", ".join(["(?, ?)"] * len(PuzzleDifficulty.LEVELS))}
+        ON CONFLICT(difficulty) DO UPDATE SET weight = excluded.weight
+    """

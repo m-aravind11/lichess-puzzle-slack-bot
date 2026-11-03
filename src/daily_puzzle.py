@@ -16,18 +16,8 @@ from constants import SlackActions
 logger = logging.getLogger(__name__)
 
 class Constants:
-    # difficulty=easier keeps puzzles around 1150-1300 rating; rare patterns ignore it.
-    MATE_LENGTH_THEMES = ("mateIn2", "mateIn3")
-    # Patterns come in any mate length and the API takes one angle, so a few refetches
-    # make mate in 2/3 likely; an occasional mate in 1 or 4 still gets through.
-    MATE_PATTERN_THEMES = (
-        "anastasiaMate", "arabianMate", "backRankMate", "balestraMate", "blindSwineMate",
-        "bodenMate", "cornerMate", "doubleBishopMate", "dovetailMate", "epauletteMate",
-        "hookMate", "killBoxMate", "morphysMate", "operaMate", "pillsburysMate",
-        "smotheredMate", "swallowstailMate", "triangleMate", "vukovicMate",
-    )
-    PATTERN_FETCH_ATTEMPTS = 3
-    LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty=easier"
+    MATE_THEMES = ("mateIn2", "mateIn3")
+    LICHESS_RANDOM_PUZZLE_URL = "https://lichess.org/api/puzzle/next?angle={theme}&difficulty={difficulty}"
     CHESSVISION_FEN_TO_IMAGE_URL = "https://fen2image.chessvision.ai/"
     FETCH_TIMEOUT_SECONDS = 10
     FETCH_RETRY_DELAYS_SECONDS = (1, 3)
@@ -58,23 +48,30 @@ class LichessDailyPuzzle:
                     raise
                 time.sleep(delay)
 
-    def _fetch_random_puzzle(self, theme: str) -> dict:
-        return self._fetch_json_with_retries(Constants.LICHESS_RANDOM_PUZZLE_URL.format(theme=theme))
+    def _fetch_random_puzzle(self, theme: str, difficulty: str) -> dict:
+        return self._fetch_json_with_retries(
+            Constants.LICHESS_RANDOM_PUZZLE_URL.format(theme=theme, difficulty=difficulty)
+        )
 
-    def get_random_puzzle(self) -> dict:
-        theme = random.choice(Constants.MATE_LENGTH_THEMES + Constants.MATE_PATTERN_THEMES)
-        for _ in range(Constants.PATTERN_FETCH_ATTEMPTS):
-            puzzle = self._fetch_random_puzzle(theme)
-            if set(puzzle['puzzle']['themes']) & set(Constants.MATE_LENGTH_THEMES):
-                break
-        return puzzle
+    def pick_difficulty(self) -> str:
+        weights = db.get_difficulty_weights()
+        return random.choices(list(weights), weights=list(weights.values()))[0]
 
-    def resolve_puzzle(self, daily_puzzle: dict) -> tuple[str, str, list]:
-        pgn = self.get_pgn_from_daily_puzzle(daily_puzzle)
-        fen = self.get_fen_from_pgn(pgn)
-        puzzle_id = daily_puzzle['puzzle']['id']
-        san_solution = self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution'])
-        return fen, puzzle_id, san_solution
+    def get_random_puzzle(self, difficulty: str) -> dict:
+        return self._fetch_random_puzzle(random.choice(Constants.MATE_THEMES), difficulty)
+
+    def resolve_puzzle(self, daily_puzzle: dict) -> dict:
+        fen = self.get_fen_from_pgn(self.get_pgn_from_daily_puzzle(daily_puzzle))
+        return {
+            "puzzle_id": daily_puzzle['puzzle']['id'],
+            "fen": fen,
+            "solution": self.convert_uci_solution_to_san(fen, daily_puzzle['puzzle']['solution']),
+            "rating": daily_puzzle['puzzle'].get('rating'),
+        }
+
+    def _fetch_random_resolved_puzzle(self) -> dict:
+        difficulty = self.pick_difficulty()
+        return {**self.resolve_puzzle(self.get_random_puzzle(difficulty)), "difficulty": difficulty}
 
     def get_pgn_from_daily_puzzle(self,daily_puzzle: dict) -> str:
         return daily_puzzle['game']['pgn']
@@ -159,9 +156,18 @@ class LichessDailyPuzzle:
     def get_image_link_from_fen(self,fen: str) -> str:
         return Constants.CHESSVISION_FEN_TO_IMAGE_URL + fen
 
-    def send_puzzle_to_slack(self,board,date_str: str,puzzle_id: str,image_link: str,num_moves: int,is_mate: bool = False) -> str | None:
+    def difficulty_label(self, difficulty: str | None, rating: int | None) -> str:
+        parts = [difficulty.capitalize() if difficulty else None, f"rated {rating}" if rating else None]
+        return ", ".join(p for p in parts if p)
+
+    def send_puzzle_to_slack(
+        self, board, date_str: str, puzzle_id: str, image_link: str, num_moves: int, is_mate: bool = False,
+        difficulty: str | None = None, rating: int | None = None,
+    ) -> str | None:
         slack_client = WebClient(token=self.LICHESS_OAUTH_TOKEN)
         move_label = f"mate in {num_moves}" if is_mate else f"{num_moves} {'move' if num_moves == 1 else 'moves'}"
+        difficulty_label = self.difficulty_label(difficulty, rating)
+        difficulty_suffix = f" · {difficulty_label}" if difficulty_label else ""
 
         try:
             root = slack_client.chat_postMessage(
@@ -174,7 +180,7 @@ class LichessDailyPuzzle:
                             "type": "mrkdwn",
                             "text": (
                                 f"<!channel> *Puzzle for the day ({date_str})*\n"
-                                f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`\n\n"
+                                f"`{self.whose_move(board).upper()} TO PLAY — {move_label.upper()}`{difficulty_suffix}\n\n"
                                 f"Click *Submit Answer* below and *ENTER YOUR OWN MOVES ONLY*, e.g. `Nf3 Bb5` "
                                 f"(your opponent's replies are added automatically). You'll get the result by DM."
                             ),
@@ -203,24 +209,24 @@ class LichessDailyPuzzle:
             logger.error("Got an error: %s", e.response['error'])
             return None
 
+    def _send_puzzle(self, puzzle: dict, today: datetime) -> str | None:
+        return self.send_puzzle_to_slack(
+            self.get_board_from_fen(puzzle['fen']),
+            today.strftime("%B %d, %Y"),
+            puzzle['puzzle_id'],
+            self.get_image_link_from_fen(self.encode_fen_for_url(puzzle['fen'])),
+            len(puzzle['solution'][0::2]),
+            puzzle['solution'][-1].endswith('#'),
+            puzzle.get('difficulty'),
+            puzzle.get('rating'),
+        )
+
     def _resend_puzzle(self, existing: dict, today: datetime) -> None:
         logger.info("Resending puzzle %s for %s", existing['puzzle_id'], today.strftime("%Y-%m-%d"))
-        thread_ts = self.send_puzzle_to_slack(
-            self.get_board_from_fen(existing['fen']),
-            today.strftime("%B %d, %Y"),
-            existing['puzzle_id'],
-            self.get_image_link_from_fen(self.encode_fen_for_url(existing['fen'])),
-            len(existing['solution'][0::2]),
-            existing['solution'][-1].endswith('#'),
-        )
-        db.update_puzzle_slack_ts(existing['puzzle_id'], thread_ts)
+        db.update_puzzle_slack_ts(existing['puzzle_id'], self._send_puzzle(existing, today))
 
-    def _fetch_new_puzzle(self) -> tuple[str, str, list]:
-        queued = db.get_next_queued_puzzle()
-        if queued:
-            return queued["fen"], queued["puzzle_id"], queued["solution"]
-
-        return self.resolve_puzzle(self.get_random_puzzle())
+    def _fetch_new_puzzle(self) -> dict:
+        return db.get_next_queued_puzzle() or self._fetch_random_resolved_puzzle()
 
     def prepare_next_puzzle(self) -> None:
         queued = db.get_next_queued_puzzle()
@@ -228,28 +234,11 @@ class LichessDailyPuzzle:
             logger.info("Puzzle %s already queued, skipping", queued["puzzle_id"])
             return
 
-        fen, puzzle_id, san_solution = self.resolve_puzzle(self.get_random_puzzle())
-        db.queue_puzzle(puzzle_id, fen, san_solution)
-
-    def _post_and_save_puzzle(self, fen: str, puzzle_id: str, san_solution: list, today: datetime) -> None:
-        thread_ts = self.send_puzzle_to_slack(
-            self.get_board_from_fen(fen),
-            today.strftime("%B %d, %Y"),
-            puzzle_id,
-            self.get_image_link_from_fen(self.encode_fen_for_url(fen)),
-            len(san_solution[0::2]),
-            san_solution[-1].endswith('#'),
-        )
-        db.save_puzzle(
-            puzzle_id=puzzle_id,
-            fen=fen,
-            solution=san_solution,
-            slack_ts=thread_ts,
-        )
+        db.queue_puzzle(**self._fetch_random_resolved_puzzle())
 
     def _generate_and_send_puzzle(self, today: datetime) -> None:
-        fen, puzzle_id, san_solution = self._fetch_new_puzzle()
-        self._post_and_save_puzzle(fen, puzzle_id, san_solution, today)
+        puzzle = self._fetch_new_puzzle()
+        db.save_puzzle(**puzzle, slack_ts=self._send_puzzle(puzzle, today))
 
     async def handle_puzzle_generation_and_sending(self, force: bool = False, new_puzzle: bool = False) -> None:
         today = datetime.now(timezone.utc)
