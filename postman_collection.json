@@ -16,31 +16,12 @@
     { "key": "puzzleId", "value": "abc123", "type": "string" },
     { "key": "submissionId", "value": "1", "type": "string" },
     { "key": "houseId", "value": "1", "type": "string" },
-    { "key": "userId", "value": "U0123ABC", "type": "string" },
-    { "key": "holidayDate", "value": "2026-12-25", "type": "string" }
+    { "key": "userId", "value": "U0123ABC", "type": "string" }
   ],
   "item": [
     {
       "name": "Puzzles",
       "item": [
-        {
-          "name": "Queue puzzle",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"puzzleId\": \"{{puzzleId}}\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/admin/puzzles",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "puzzles"]
-            },
-            "description": "Fetches the puzzle from Lichess and queues it. 201 queued, 400 missing puzzleId, 409 already exists, 502 Lichess couldn't fetch it."
-          }
-        },
         {
           "name": "List puzzles",
           "request": {
@@ -83,6 +64,18 @@
     {
       "name": "Daily puzzle",
       "item": [
+        {
+          "name": "Prepare next puzzle",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/dailyPuzzle:prepare",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dailyPuzzle:prepare"]
+            },
+            "description": "Queues a random Lichess puzzle for the next send. No-op if anything is already queued."
+          }
+        },
         {
           "name": "Send daily puzzle",
           "request": {
@@ -280,47 +273,6 @@
               "path": ["admin", "players", "{{userId}}", "house"]
             },
             "description": "For when a player leaves the company - soft-deletes the assignment. 200 unassigned, 404 player isn't in a house."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Holidays",
-      "item": [
-        {
-          "name": "List holidays",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{baseUrl}}/admin/holidays",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "holidays"]
-            },
-            "description": "UTC dates no puzzle or leaderboard is posted, oldest first."
-          }
-        },
-        {
-          "name": "Add holiday",
-          "request": {
-            "method": "PUT",
-            "url": {
-              "raw": "{{baseUrl}}/admin/holidays/{{holidayDate}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "holidays", "{{holidayDate}}"]
-            },
-            "description": "200 added (or already a holiday), 400 bad or past date."
-          }
-        },
-        {
-          "name": "Remove holiday",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{baseUrl}}/admin/holidays/{{holidayDate}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "holidays", "{{holidayDate}}"]
-            },
-            "description": "200 removed, 404 not a holiday."
           }
         }
       ]

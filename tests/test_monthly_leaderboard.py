@@ -46,8 +46,8 @@ def post(conn, puzzle_id, day, open_=False, active=True):
     """Posts a puzzle at noon UTC on day (YYYY-MM-DD), closed unless open_."""
     posted_at = f"{day}T12:00:00+00:00"
     conn.execute(
-        "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-        " VALUES (?, 'fen', '[]', 'random', ?, ?, ?, ?)",
+        "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+        " VALUES (?, 'fen', '[]', ?, ?, ?, ?)",
         (puzzle_id, posted_at, posted_at, int(active), None if open_ else "x"),
     )
 
@@ -270,7 +270,6 @@ def test_slack_title_names_the_month():
 @pytest.fixture
 def send(conn, monkeypatch):
     monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
-    monkeypatch.setattr(db, "is_holiday", lambda date: False)
     client = TestClient(app_module.app)
 
     def run():
@@ -347,21 +346,6 @@ def test_final_standings_have_no_streaks(conn, now, send):
     answer(conn, "U1", "sep30", 10)
     monthly, _ = send()
     assert monthly.split("\n")[4].split()[-1] == "-"
-
-
-def test_holiday_on_the_1st_delays_both_posts_to_the_next_run(conn, now, send, monkeypatch):
-    post(conn, "sep30", "2026-09-30")
-    answer(conn, "U1", "sep30", 10)
-
-    monkeypatch.setattr(db, "is_holiday", lambda date: True)
-    assert send() == []
-    assert stored(conn) == [("2026-09", "U1", 10, 1, 1)]
-
-    monkeypatch.setattr(db, "is_holiday", lambda date: False)
-    monthly, all_time_text = send()
-    assert monthly.startswith("*Final standings - September 2026*")
-    assert all_time_text.startswith("*All-time standings - through September 2026*")
-    assert stored(conn) == [("2026-09", "U1", 10, 1, 1)]
 
 
 def test_stored_month_keeps_the_final_ranking_and_solve_times(conn, now):
@@ -485,14 +469,6 @@ def test_slack_all_time_post():
     assert lines[4].split() == ["1", "u1", "Gryffindor", "19", "2/3", "2"]
     assert lines[5].split() == ["2", "U2", "-", "4", "1/1", "1"]
     assert "*House standings* _(sum of each house's players' points all-time)_" in text
-
-
-def test_finished_month_is_stored_even_on_a_holiday(conn, now, send, monkeypatch):
-    monkeypatch.setattr(db, "is_holiday", lambda date: True)
-    post(conn, "sep", "2026-09-30")
-    answer(conn, "U1", "sep", 10)
-    assert send() == []
-    assert stored(conn) == [("2026-09", "U1", 10, 1, 1)]
 
 
 def test_half_points_add_up_and_are_stored_unrounded(conn, now):

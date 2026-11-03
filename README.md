@@ -33,12 +33,8 @@ Each person gets their result by DM, and a leaderboard keeps score.
   months and the all-time standings. Streaks carry across months.
 - **Houses.** Players can be grouped into teams that compete on a house
   leaderboard.
-- **Holidays.** Pick days off, and no puzzle is posted. Holidays never break
-  anyone's streak.
-- **Curated puzzles.** Queue specific puzzles to post next. Otherwise the bot
-  picks a random one.
 
-The web pages for the leaderboard, houses and holidays are linked from the
+The web pages for the leaderboard and houses are linked from the
 home page and ask for the admin secret.
 
 ## Scoring
@@ -85,7 +81,7 @@ their solve points, so a puzzle is worth at most 15.
 ### Streak bonus
 
 A streak is the number of puzzles solved in a row. A wrong or missed answer
-resets it; holidays and days with no puzzle don't. Each milestone's bonus is
+resets it; days with no puzzle don't. Each milestone's bonus is
 added once, on the day it's reached, and counts toward that month's points.
 Bonuses already earned are kept when the streak breaks, and a new streak can
 earn them all again.

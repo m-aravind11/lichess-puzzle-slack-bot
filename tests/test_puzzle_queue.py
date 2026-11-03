@@ -114,12 +114,12 @@ def test_migrations_keep_existing_puzzles_as_posted(monkeypatch):
     migrations.run_migrations(connection)
 
     columns = [row[1] for row in connection.execute("PRAGMA table_info(puzzles)")]
-    assert columns == ["puzzle_id", "fen", "solution", "source", "added_at", "posted_at", "slack_ts", "active", "closed_at"]
+    assert columns == ["puzzle_id", "fen", "solution", "added_at", "posted_at", "slack_ts", "active", "closed_at"]
 
-    rows = connection.execute("SELECT puzzle_id, fen, solution, source, added_at, posted_at, slack_ts, active FROM puzzles").fetchall()
+    rows = connection.execute("SELECT puzzle_id, fen, solution, added_at, posted_at, slack_ts, active FROM puzzles").fetchall()
     posted_at = "2026-09-18T11:30:57.799+00:00"
     assert rows == [
-        ("posted", "fen", '["e4"]', "random", posted_at, posted_at, "1789731057.798759", 0),
-        ("post_failed", "fen", '["d4"]', "random", "2026-09-19", "2026-09-19", None, 1),
+        ("posted", "fen", '["e4"]', posted_at, posted_at, "1789731057.798759", 0),
+        ("post_failed", "fen", '["d4"]', "2026-09-19", "2026-09-19", None, 1),
     ]
     connection.close()

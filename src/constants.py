@@ -6,7 +6,6 @@ class Paths:
     INDEX_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'index.html')
     HOUSES_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'houses.html')
     LEADERBOARD_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'leaderboard.html')
-    HOLIDAYS_HTML_PATH = os.path.join(os.path.dirname(__file__), 'static', 'holidays.html')
 
 
 class Security:
@@ -17,11 +16,6 @@ class Security:
 class Validation:
     # '=' is optional so UCI-style promotions (e7e8q) pass through to parse_san.
     SAN_TOKEN_RE = re.compile(r'^(?:[O0]-[O0](?:-[O0])?|[KQRBN]?[a-h]?[1-8]?[x*]?[a-h][1-8](?:=?[QRBN])?)[+#]?$', re.IGNORECASE)
-
-
-class Schedule:
-    # Must match the day-of-week field of the crons in cloudflare-worker/wrangler.toml.
-    PUZZLE_WEEKDAYS = frozenset(range(5))
 
 
 class SlackActions:
@@ -40,11 +34,6 @@ class SubmissionResult:
     RECORDED = "recorded"
     NO_ATTEMPTS_LEFT = "no_attempts_left"
     PUZZLE_CLOSED = "puzzle_closed"
-
-
-class PuzzleSource:
-    CURATED = "curated"
-    RANDOM = "random"
 
 
 class PuzzleState:

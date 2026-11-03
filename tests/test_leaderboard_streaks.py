@@ -36,8 +36,8 @@ def add_puzzles(conn, count, deactivated=(), open_=()):
     """Posts p1..p<count> on consecutive days; all closed unless listed in open_."""
     for i in range(1, count + 1):
         conn.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, ?, ?)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, ?, ?)",
             (
                 f"p{i}",
                 f"2024-01-{i:02d}T12:00:00+00:00",
@@ -212,8 +212,8 @@ def test_correct_answer_on_a_deactivated_puzzle_does_not_count(conn):
 def test_queued_puzzle_is_not_the_latest(conn):
     add_puzzles(conn, 2)
     conn.execute(
-        "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, active)"
-        " VALUES ('q1', 'fen', '[]', 'curated', '2024-01-05T00:00:00+00:00', 1)"
+        "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, active)"
+        " VALUES ('q1', 'fen', '[]', '2024-01-05T00:00:00+00:00', 1)"
     )
     add_answers(conn, "alice", {1: True, 2: True})
     assert streaks("alice") == (2, 2)
@@ -264,8 +264,8 @@ def test_current_streak_start_is_none_when_there_is_no_current_streak(conn):
 def test_post_order_decides_the_sequence_not_puzzle_id(conn):
     for puzzle_id, day in (("p2", 1), ("p1", 2), ("p3", 3)):
         conn.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, 1, 'x')",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, 1, 'x')",
             (puzzle_id, f"2024-01-{day:02d}T12:00:00+00:00", f"2024-01-{day:02d}T12:00:00+00:00"),
         )
     add_answers(conn, "alice", {1: True, 3: True})
@@ -405,7 +405,6 @@ def post_leaderboard(monkeypatch):
 
     def run(board):
         monkeypatch.setattr(db, "store_finished_months", lambda: None)
-        monkeypatch.setattr(db, "is_holiday", lambda date: False)
         monkeypatch.setattr(db, "list_unannounced_months", lambda: [])
         monkeypatch.setattr(db, "get_leaderboard_month", lambda: {"month": "2024-01", "final": False})
         monkeypatch.setattr(db, "get_leaderboard", lambda month: board)
@@ -440,7 +439,6 @@ def post_leaderboard_for_real(monkeypatch):
     post = MagicMock()
     monkeypatch.setattr(app_module.slack_client, "chat_postMessage", post)
     monkeypatch.setattr(db, "store_finished_months", lambda: None)
-    monkeypatch.setattr(db, "is_holiday", lambda date: False)
     monkeypatch.setattr(db, "list_unannounced_months", lambda: [])
     monkeypatch.setattr(db, "get_leaderboard_month", lambda: {"month": "2024-01", "final": False})
 
@@ -521,8 +519,8 @@ def test_record_streak_bonuses_credits_only_the_incremental_amount_within_one_ru
     # Days 4-7: same unbroken streak reaches the 7-day milestone.
     for i in range(4, 8):
         conn.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, 1, ?)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, 1, ?)",
             (
                 f"p{i}", f"2024-01-{i:02d}T12:00:00+00:00", f"2024-01-{i:02d}T12:00:00+00:00",
                 f"2024-01-{i + 1:02d}T06:00:00+00:00",
@@ -565,8 +563,8 @@ def test_record_streak_bonuses_awards_again_after_a_streak_resets(conn):
     # Days 4-7: the streak breaks on day 4, then rebuilds to another 3-day streak by day 7.
     for i in range(4, 8):
         conn.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, 1, ?)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, 1, ?)",
             (
                 f"p{i}", f"2024-01-{i:02d}T12:00:00+00:00", f"2024-01-{i:02d}T12:00:00+00:00",
                 f"2024-01-{i + 1:02d}T06:00:00+00:00",
@@ -613,8 +611,8 @@ def test_a_later_crossing_does_not_inflate_an_already_closed_months_total(conn):
     # February: the same unbroken run reaches the 14-day milestone.
     for i in range(8, 15):
         conn.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active, closed_at)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, 1, ?)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active, closed_at)"
+            " VALUES (?, 'fen', '[]', ?, ?, 1, ?)",
             (
                 f"p{i}", f"2024-02-{i - 7:02d}T12:00:00+00:00", f"2024-02-{i - 7:02d}T12:00:00+00:00",
                 f"2024-02-{i - 6:02d}T06:00:00+00:00",

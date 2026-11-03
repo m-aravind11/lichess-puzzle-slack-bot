@@ -11,8 +11,8 @@ from typing import NamedTuple
 import turso_serverless
 
 import migrations
-from constants import PlayerHouseResult, PuzzleResult, PuzzleSource, PuzzleState, SubmissionResult
-from queries import HolidayQueries, HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
+from constants import PlayerHouseResult, PuzzleResult, PuzzleState, SubmissionResult
+from queries import HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None =
         cur = conn.cursor()
         cur.execute(
             PuzzleQueries.UPSERT_POSTED,
-            (puzzle_id, fen, json.dumps(solution), PuzzleSource.RANDOM, now, now, slack_ts),
+            (puzzle_id, fen, json.dumps(solution), now, now, slack_ts),
         )
         if cur.rowcount == 0:
             logger.info("save_puzzle: %s already posted, no-op", puzzle_id)
@@ -98,7 +98,7 @@ def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
         cur = conn.cursor()
         cur.execute(
             PuzzleQueries.INSERT_QUEUED,
-            (puzzle_id, fen, json.dumps(solution), PuzzleSource.CURATED, _now()),
+            (puzzle_id, fen, json.dumps(solution), _now()),
         )
         if cur.rowcount == 0:
             logger.info("queue_puzzle: %s already exists, no-op", puzzle_id)
@@ -549,37 +549,3 @@ def unassign_player_house(user_id: str) -> bool:
         unassigned = cur.rowcount > 0
         logger.info("unassign_player_house: user=%s -> %s", user_id, "unassigned" if unassigned else "not assigned")
         return unassigned
-
-
-@_retry_stale_connection
-def list_holidays() -> list:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(HolidayQueries.LIST)
-        return [row[0] for row in cur.fetchall()]
-
-
-@_retry_stale_connection
-def is_holiday(date: str) -> bool:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(HolidayQueries.EXISTS, (date,))
-        return cur.fetchone() is not None
-
-
-@_retry_stale_connection
-def add_holiday(date: str) -> None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(HolidayQueries.INSERT, (date, _now()))
-        logger.info("add_holiday: %s -> %s", date, "added" if cur.rowcount > 0 else "already a holiday")
-
-
-@_retry_stale_connection
-def remove_holiday(date: str) -> bool:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(HolidayQueries.DELETE, (date,))
-        removed = cur.rowcount > 0
-        logger.info("remove_holiday: %s -> %s", date, "removed" if removed else "not a holiday")
-        return removed

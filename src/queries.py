@@ -27,15 +27,15 @@ class PuzzleQueries:
     """
 
     INSERT_QUEUED = """
-        INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, active)
-        VALUES (?, ?, ?, ?, ?, 1)
+        INSERT INTO puzzles (puzzle_id, fen, solution, added_at, active)
+        VALUES (?, ?, ?, ?, 1)
         ON CONFLICT(puzzle_id) DO NOTHING
     """
 
     # An already-posted row is left untouched, so a resend keeps its original post time.
     UPSERT_POSTED = """
-        INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, slack_ts, active)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, slack_ts, active)
+        VALUES (?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(puzzle_id) DO UPDATE SET
             posted_at = excluded.posted_at,
             slack_ts = excluded.slack_ts,
@@ -50,17 +50,17 @@ class PuzzleQueries:
     """
 
     LIST_ALL = """
-        SELECT puzzle_id, source, added_at, posted_at, active FROM puzzles
+        SELECT puzzle_id, added_at, posted_at, active FROM puzzles
         ORDER BY added_at ASC, rowid ASC
     """
 
     LIST_QUEUED = """
-        SELECT puzzle_id, source, added_at, posted_at, active FROM puzzles
+        SELECT puzzle_id, added_at, posted_at, active FROM puzzles
         WHERE posted_at IS NULL ORDER BY added_at ASC, rowid ASC
     """
 
     LIST_POSTED = """
-        SELECT puzzle_id, source, added_at, posted_at, active FROM puzzles
+        SELECT puzzle_id, added_at, posted_at, active FROM puzzles
         WHERE posted_at IS NOT NULL ORDER BY posted_at ASC, rowid ASC
     """
 
@@ -295,13 +295,3 @@ class PlayerQueries:
     """
 
     UNASSIGN = "UPDATE player_houses SET active = 0 WHERE user_id = ? AND active = 1"
-
-
-class HolidayQueries:
-    LIST = "SELECT date FROM holidays ORDER BY date"
-
-    EXISTS = "SELECT 1 FROM holidays WHERE date = ?"
-
-    INSERT = "INSERT INTO holidays (date, added_at) VALUES (?, ?) ON CONFLICT(date) DO NOTHING"
-
-    DELETE = "DELETE FROM holidays WHERE date = ?"

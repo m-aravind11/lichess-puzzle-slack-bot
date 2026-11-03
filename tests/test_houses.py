@@ -22,8 +22,8 @@ def conn():
     migrations.run_migrations(connection)
     for puzzle_id, posted_at in (("p1", "2024-01-31T12:00:00+00:00"), ("p2", "2024-02-01T12:00:00+00:00")):
         connection.execute(
-            "INSERT INTO puzzles (puzzle_id, fen, solution, source, added_at, posted_at, active)"
-            " VALUES (?, 'fen', '[]', 'random', ?, ?, 1)",
+            "INSERT INTO puzzles (puzzle_id, fen, solution, added_at, posted_at, active)"
+            " VALUES (?, 'fen', '[]', ?, ?, 1)",
             (puzzle_id, posted_at, posted_at),
         )
     yield connection

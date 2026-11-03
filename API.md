@@ -4,15 +4,16 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /`, `GET /leaderboard`, `GET /houses`,
-`GET /holidays` and `POST /webhooks/slack` requires a bearer token. There are
+Every route below except `GET /`, `GET /leaderboard`, `GET /houses` and
+`POST /webhooks/slack` requires a bearer token. There are
 two secrets:
 
 - `ADMIN_SECRET` - for people (the admin pages, curl, Postman). Accepted by
   every admin route.
-- `CRON_SECRET` - for the Cloudflare cron only. Accepted by just the three
-  routes it calls: `POST /admin/dailyPuzzle:send`,
-  `POST /admin/puzzle:revealSolution` and `POST /admin/leaderboard:send`.
+- `CRON_SECRET` - for the Cloudflare cron only. Accepted by just the four
+  routes it calls: `POST /admin/dailyPuzzle:prepare`,
+  `POST /admin/dailyPuzzle:send`, `POST /admin/puzzle:revealSolution` and
+  `POST /admin/leaderboard:send`.
 
 ```
 Authorization: Bearer $ADMIN_SECRET
@@ -35,26 +36,51 @@ Serves the static `index.html`. No auth, no response body documented here.
 
 ---
 
-## `GET /leaderboard`, `GET /houses`, `GET /holidays`
+## `GET /leaderboard`, `GET /houses`
 
-Serve the web leaderboard (`src/static/leaderboard.html`), the house
-management page (`src/static/houses.html`) and the holiday calendar
-(`src/static/holidays.html`), all linked from `/`. No auth - the pages hold
-no data; they ask for `ADMIN_SECRET` and use it to call the admin routes
-below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`;
-`/admin/holidays`). The secret is kept in the tab's `sessionStorage`, shared
+Serve the web leaderboard (`src/static/leaderboard.html`) and the house
+management page (`src/static/houses.html`), both linked from `/`. No auth -
+the pages hold no data; they ask for `ADMIN_SECRET` and use it to call the
+admin routes below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`).
+The secret is kept in the tab's `sessionStorage`, shared
 by all the pages, so unlocking one unlocks the others. Shared page code lives in
 `src/static/admin.js` / `admin.css`.
 
 ---
 
+## `POST /admin/dailyPuzzle:prepare`
+
+Fetches a random Lichess puzzle and queues it, so the send only reads the
+queue and posts to Slack. A no-op if anything is already queued, so it's safe
+to retrigger.
+
+The cron worker calls it right after `POST /admin/dailyPuzzle:send` to queue
+the next puzzle, and again right after `POST /admin/puzzle:revealSolution` in
+case that run failed.
+
+**Responses**
+
+- `200`: queued a random puzzle, or something was already queued
+- `401`: bad/missing bearer token
+- `500`: Lichess fetch failed after retries, or an unexpected error
+
+Lichess fetches time out after 10s and are retried twice (after 1s, then 3s)
+on a timeout, connection error or `5xx`. A `429` or other `4xx` fails
+straight away.
+
+```
+curl -X POST "https://.../admin/dailyPuzzle:prepare" \
+  -H "Authorization: Bearer $ADMIN_SECRET"
+```
+
+---
+
 ## `POST /admin/dailyPuzzle:send`
 
-Fetches a puzzle and posts it to the configured Slack channel. Meant to be
-hit once a day by a cron trigger, but safe to retrigger; see `?force` and
-`?newPuzzle` below. Prefers the oldest unsent entry in the curated queue
-(see `POST /admin/puzzles`); falls back to a random Lichess puzzle
-when that queue is empty.
+Posts a puzzle to the configured Slack channel. Meant to be hit once a day by
+a cron trigger, but safe to retrigger; see `?force` and `?newPuzzle` below.
+Takes the oldest puzzle in the queue (see `POST /admin/dailyPuzzle:prepare`);
+falls back to fetching a random Lichess puzzle when the queue is empty.
 
 **Query params** (both optional, default `false`):
 
@@ -63,9 +89,7 @@ when that queue is empty.
 | `force`      | If today's puzzle was already sent, **resend that same puzzle** (re-post to Slack, no new fetch, no new DB row). Use this for a retry after a network/Slack failure. If nothing active exists for today (e.g. it was deactivated), falls back to generating a fresh one. |
 | `newPuzzle` | Always fetches a **different** puzzle and posts+saves it, regardless of whether one was already sent today. Lichess has no stable "today's puzzle" id (unlike the official daily puzzle), so this is the explicit way to ask for a different one rather than a resend. |
 
-With neither flag: nothing is posted if today is a holiday (see
-`PUT /admin/holidays/{date}`); the flags are manual, so they post anyway. And
-if a puzzle was already sent today (active or
+With neither flag: if a puzzle was already sent today (active or
 deactivated), this is a no-op. It protects against a duplicate cron trigger
 spamming the channel with a second, different random puzzle.
 
@@ -88,35 +112,6 @@ curl -X POST "https://.../admin/dailyPuzzle:send?force=true" \
 
 ---
 
-## `POST /admin/puzzles`
-
-Queues a hand-picked Lichess puzzle id to be sent ahead of the random fetch,
-oldest first. The puzzle is fetched and resolved from Lichess immediately
-(not at send time), so a bad id is rejected right away. A queued puzzle is a
-row in `puzzles` with no `posted_at` yet; `DELETE /admin/puzzles/{puzzle_id}`
-takes it out of the queue and `:reactivate` puts it back.
-
-**Body** (`application/json`)
-
-- `puzzleId` (string, required)
-
-**Responses**
-
-- `201`: queued
-- `400`: `puzzleId` missing/empty
-- `401`: bad/missing bearer token
-- `409`: that puzzle already exists (queued or already posted)
-- `502`: Lichess couldn't fetch that puzzle id
-
-```
-curl -X POST "https://.../admin/puzzles" \
-  -H "Authorization: Bearer $ADMIN_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"puzzleId": "abc123"}'
-```
-
----
-
 ## `GET /admin/puzzles`
 
 Lists puzzles, queued and posted.
@@ -128,9 +123,9 @@ Lists puzzles, queued and posted.
 
 **Responses**
 
-- `200`: array of `{puzzleId, source, addedAt, postedAt, active}`, where
-  `source` is `curated` or `random`, `addedAt` is when it was queued (or
-  fetched, for random ones), and `postedAt` is `null` while queued
+- `200`: array of `{puzzleId, addedAt, postedAt, active}`, where
+  `addedAt` is when it was queued by `POST /admin/dailyPuzzle:prepare`
+  or, for a puzzle fetched at send time, posted, and `postedAt` is `null` while queued
 - `400`: unknown `state`
 - `401`: bad/missing bearer token
 
@@ -243,10 +238,10 @@ months are recorded in the `announced_months` table. This is normally the
 run on the 1st, but if that run fails or is skipped, the next successful run
 catches up. A month that has ended but whose last puzzle is still open gets
 no live post.
-No-ops (still `200`) if today is a holiday (it's only posted on puzzle days),
-or if there's nothing to post (nobody has answered this month's puzzles yet).
+No-ops (still `200`) if there's nothing to post (nobody has answered this
+month's puzzles yet).
 
-First, even on a holiday, it stores the board of every finished month not
+First, it stores the board of every finished month not
 stored yet in the `monthly_scores` table - each player's rank, points,
 correct and attempted count, and average solve time. A month is finished
 once it's over and its last puzzle has closed. A month is stored once and
@@ -451,50 +446,6 @@ house standings.
 curl -X DELETE "https://.../admin/players/U0123ABC/house" \
   -H "Authorization: Bearer $ADMIN_SECRET"
 ```
-
----
-
-## `GET /admin/holidays`
-
-Lists holidays - UTC dates the daily puzzle and leaderboard aren't posted -
-oldest first, past ones included. Streaks count posted puzzles, not calendar
-days, so a holiday never breaks one.
-
-**Responses**
-
-- `200`: array of `{date}`, `date` as `YYYY-MM-DD`
-- `401`: bad/missing bearer token
-
----
-
-## `PUT /admin/holidays/{date}`
-
-Makes `date` (`YYYY-MM-DD`, UTC) a holiday. Idempotent - already a holiday
-is a no-op `200`.
-
-**Responses**
-
-- `200`: `{date}`
-- `400`: not `YYYY-MM-DD`, or in the past
-- `401`: bad/missing bearer token
-
-```
-curl -X PUT "https://.../admin/holidays/2026-12-25" \
-  -H "Authorization: Bearer $ADMIN_SECRET"
-```
-
----
-
-## `DELETE /admin/holidays/{date}`
-
-Removes a holiday (hard delete - nothing references it).
-
-**Responses**
-
-- `200`: removed
-- `400`: not `YYYY-MM-DD`
-- `401`: bad/missing bearer token
-- `404`: not a holiday
 
 ---
 
