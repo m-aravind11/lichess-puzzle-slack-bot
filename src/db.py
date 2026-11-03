@@ -11,8 +11,8 @@ from typing import NamedTuple
 import turso_serverless
 
 import migrations
-from constants import PlayerHouseResult, PuzzleResult, PuzzleState, SubmissionResult
-from queries import HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
+from constants import PlayerHouseResult, PuzzleDifficulty, PuzzleResult, PuzzleState, SubmissionResult
+from queries import DifficultyQueries, HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +77,17 @@ def _now() -> str:
 
 
 @_retry_stale_connection
-def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None = None) -> None:
+def save_puzzle(
+    puzzle_id: str, fen: str, solution: list, slack_ts: str | None = None,
+    difficulty: str | None = None, rating: int | None = None,
+) -> None:
     """Resending an already-posted puzzle_id is a no-op."""
     now = _now()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             PuzzleQueries.UPSERT_POSTED,
-            (puzzle_id, fen, json.dumps(solution), now, now, slack_ts),
+            (puzzle_id, fen, json.dumps(solution), difficulty, rating, now, now, slack_ts),
         )
         if cur.rowcount == 0:
             logger.info("save_puzzle: %s already posted, no-op", puzzle_id)
@@ -93,12 +96,14 @@ def save_puzzle(puzzle_id: str, fen: str, solution: list, slack_ts: str | None =
 
 
 @_retry_stale_connection
-def queue_puzzle(puzzle_id: str, fen: str, solution: list) -> bool:
+def queue_puzzle(
+    puzzle_id: str, fen: str, solution: list, difficulty: str | None = None, rating: int | None = None,
+) -> bool:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             PuzzleQueries.INSERT_QUEUED,
-            (puzzle_id, fen, json.dumps(solution), _now()),
+            (puzzle_id, fen, json.dumps(solution), difficulty, rating, _now()),
         )
         if cur.rowcount == 0:
             logger.info("queue_puzzle: %s already exists, no-op", puzzle_id)
@@ -115,8 +120,11 @@ def get_next_queued_puzzle() -> dict | None:
         row = cur.fetchone()
         if row is None:
             return None
-        puzzle_id, fen, solution = row
-        return {"puzzle_id": puzzle_id, "fen": fen, "solution": json.loads(solution)}
+        puzzle_id, fen, solution, difficulty, rating = row
+        return {
+            "puzzle_id": puzzle_id, "fen": fen, "solution": json.loads(solution),
+            "difficulty": difficulty, "rating": rating,
+        }
 
 
 _LIST_QUERIES = {
@@ -149,6 +157,8 @@ def _row_to_puzzle(row: dict) -> dict:
         "fen": row["fen"],
         "solution": json.loads(row["solution"]),
         "slack_ts": row["slack_ts"],
+        "difficulty": row["difficulty"],
+        "rating": row["rating"],
     }
 
 
@@ -183,6 +193,25 @@ def close_previous_puzzle(before_date: str) -> dict | None:
 
         logger.info("close_previous_puzzle: closed %s", puzzle['puzzle_id'])
         return puzzle
+
+
+@_retry_stale_connection
+def get_difficulty_weights() -> dict:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(DifficultyQueries.LIST)
+        weights = {difficulty: weight for difficulty, weight in cur.fetchall()}
+    return {level: weights.get(level, 0) for level in PuzzleDifficulty.LEVELS}
+
+
+@_retry_stale_connection
+def set_difficulty_weights(weights: dict) -> None:
+    with get_connection() as conn:
+        conn.cursor().execute(
+            DifficultyQueries.UPSERT_ALL,
+            tuple(value for level in PuzzleDifficulty.LEVELS for value in (level, weights[level])),
+        )
+    logger.info("set_difficulty_weights: %s", weights)
 
 
 @_retry_stale_connection

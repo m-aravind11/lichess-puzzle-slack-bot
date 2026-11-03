@@ -39,8 +39,8 @@ def test_get_active_puzzle_by_date_returns_none_when_nothing_active(monkeypatch)
 
 
 def test_get_active_puzzle_by_date_returns_puzzle_dict(monkeypatch):
-    description = [("puzzle_id",), ("posted_at",), ("fen",), ("solution",), ("slack_ts",)]
-    row = ("p1", "2024-01-01T09:00:00+00:00", "fen", '["e4"]', "1700000000.0")
+    description = [("puzzle_id",), ("posted_at",), ("fen",), ("solution",), ("slack_ts",), ("difficulty",), ("rating",)]
+    row = ("p1", "2024-01-01T09:00:00+00:00", "fen", '["e4"]', "1700000000.0", "easier", 1243)
     _patch_connection(monkeypatch, fetchone_result=row, description=description)
 
     puzzle = db.get_active_puzzle_by_date("2024-01-01")
@@ -51,6 +51,8 @@ def test_get_active_puzzle_by_date_returns_puzzle_dict(monkeypatch):
         "fen": "fen",
         "solution": ["e4"],
         "slack_ts": "1700000000.0",
+        "difficulty": "easier",
+        "rating": 1243,
     }
 
 

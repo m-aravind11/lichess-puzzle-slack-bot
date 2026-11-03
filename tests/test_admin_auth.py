@@ -27,6 +27,8 @@ ADMIN_ROUTES = [
     ("DELETE", "/admin/players/U1/house"),
     ("GET", "/admin/leaderboard"),
     ("GET", "/admin/leaderboard/allTime"),
+    ("GET", "/admin/difficultyWeights"),
+    ("PUT", "/admin/difficultyWeights"),
 ]
 
 ALL_ROUTES = CRON_ROUTES + ADMIN_ROUTES
@@ -47,6 +49,7 @@ def block_handlers(monkeypatch):
         "get_leaderboard", "get_leaderboard_month", "store_finished_months", "list_stored_months",
         "list_unannounced_months", "mark_months_announced",
         "get_stored_leaderboard", "get_all_time_leaderboard", "list_puzzles", *HOUSE_DB_CALLS,
+        "get_difficulty_weights", "set_difficulty_weights",
     ):
         monkeypatch.setattr(db, name, MagicMock(side_effect=AssertionError("should not run")))
     monkeypatch.setattr(app_module.lichess, "prepare_next_puzzle", MagicMock(side_effect=AssertionError("should not run")))

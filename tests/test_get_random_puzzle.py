@@ -3,50 +3,31 @@ from unittest.mock import MagicMock
 import pytest
 
 import daily_puzzle
-from daily_puzzle import Constants, LichessDailyPuzzle
-
-
-def puzzle_with(*themes: str) -> dict:
-    return {"puzzle": {"themes": list(themes)}}
+from daily_puzzle import LichessDailyPuzzle
 
 
 @pytest.fixture
 def lichess(monkeypatch):
     lp = LichessDailyPuzzle()
-    monkeypatch.setattr(lp, "_fetch_json_with_retries", MagicMock())
+    monkeypatch.setattr(lp, "_fetch_json_with_retries", MagicMock(return_value={"puzzle": {}}))
     return lp
 
 
-def fetched_themes(lp) -> list[str]:
-    return [call.args[0].split("angle=")[1].split("&")[0] for call in lp._fetch_json_with_retries.call_args_list]
+def fetched_urls(lp) -> list[str]:
+    return [call.args[0] for call in lp._fetch_json_with_retries.call_args_list]
 
 
-def test_pattern_puzzle_of_wanted_length_returned(lichess, monkeypatch):
-    monkeypatch.setattr(daily_puzzle.random, "choice", lambda seq: "smotheredMate")
-    wanted = puzzle_with("mateIn2", "smotheredMate")
-    lichess._fetch_json_with_retries.return_value = wanted
+def test_fetches_one_mate_in_2_or_3_puzzle_at_the_requested_difficulty(lichess, monkeypatch):
+    choice = MagicMock(return_value="mateIn3")
+    monkeypatch.setattr(daily_puzzle.random, "choice", choice)
 
-    assert lichess.get_random_puzzle() is wanted
-    assert fetched_themes(lichess) == ["smotheredMate"]
-
-
-def test_pattern_puzzle_refetched_until_wanted_length(lichess, monkeypatch):
-    monkeypatch.setattr(daily_puzzle.random, "choice", lambda seq: "backRankMate")
-    wanted = puzzle_with("mateIn3", "backRankMate")
-    lichess._fetch_json_with_retries.side_effect = [
-        puzzle_with("mateIn1", "backRankMate"),
-        puzzle_with("mateIn4", "backRankMate"),
-        wanted,
-    ]
-
-    assert lichess.get_random_puzzle() is wanted
-    assert fetched_themes(lichess) == ["backRankMate"] * 3
+    assert lichess.get_random_puzzle("hardest") is lichess._fetch_json_with_retries.return_value
+    choice.assert_called_once_with(("mateIn2", "mateIn3"))
+    assert fetched_urls(lichess) == ["https://lichess.org/api/puzzle/next?angle=mateIn3&difficulty=hardest"]
 
 
-def test_last_pattern_puzzle_kept_after_misses(lichess, monkeypatch):
-    monkeypatch.setattr(daily_puzzle.random, "choice", lambda seq: "hookMate")
-    puzzles = [puzzle_with("mateIn1", "hookMate")] * (Constants.PATTERN_FETCH_ATTEMPTS - 1) + [puzzle_with("mateIn4", "hookMate")]
-    lichess._fetch_json_with_retries.side_effect = puzzles
+def test_difficulty_is_picked_from_the_stored_weights(lichess, monkeypatch):
+    weights = {"easiest": 0, "easier": 0, "normal": 0, "harder": 100, "hardest": 0}
+    monkeypatch.setattr(daily_puzzle.db, "get_difficulty_weights", MagicMock(return_value=weights))
 
-    assert lichess.get_random_puzzle() is puzzles[-1]
-    assert fetched_themes(lichess) == ["hookMate"] * Constants.PATTERN_FETCH_ATTEMPTS
+    assert {lichess.pick_difficulty() for _ in range(20)} == {"harder"}

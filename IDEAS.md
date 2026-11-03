@@ -12,10 +12,10 @@ Already shipped instead of the earlier per-puzzle redesign: half-point solve
 slabs, the podium bonus and streak milestone bonuses (README's Scoring
 section).
 
-## Puzzle difficulty / theme
-Lichess's daily-puzzle API already returns a puzzle rating and themes (fork,
-endgame, etc.) - currently discarded in `daily_puzzle.py`. Store and show it
-on the Slack post; could also weight scoring by difficulty.
+## Weight scoring by difficulty
+Each puzzle's difficulty and Lichess rating are now stored and shown on the
+Slack post; scoring could weight by them. Themes are still discarded, since
+showing them (e.g. smotheredMate) would give the answer away.
 
 ## Personal stats lookup
 Slash command or DM ("my stats") giving a user their own rank, streak, avg

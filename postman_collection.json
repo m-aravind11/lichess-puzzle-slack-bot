@@ -276,6 +276,40 @@
           }
         }
       ]
+    },
+    {
+      "name": "Difficulty",
+      "item": [
+        {
+          "name": "Get difficulty weights",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/difficultyWeights",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "difficultyWeights"]
+            }
+          }
+        },
+        {
+          "name": "Set difficulty weights",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"easiest\": 20,\n  \"easier\": 50,\n  \"normal\": 15,\n  \"harder\": 10,\n  \"hardest\": 5\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/difficultyWeights",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "difficultyWeights"]
+            },
+            "description": "200 saved, 400 missing/unknown difficulty, a weight not an integer from 0 to 100, or weights not adding up to 100."
+          }
+        }
+      ]
     }
   ]
 }

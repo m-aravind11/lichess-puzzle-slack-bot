@@ -4,8 +4,8 @@ Base URL (deployed): `https://lichess-puzzle-slack-bot.vercel.app`
 
 ## Authentication
 
-Every route below except `GET /`, `GET /leaderboard`, `GET /houses` and
-`POST /webhooks/slack` requires a bearer token. There are
+Every route below except `GET /`, `GET /leaderboard`, `GET /houses`,
+`GET /difficulty` and `POST /webhooks/slack` requires a bearer token. There are
 two secrets:
 
 - `ADMIN_SECRET` - for people (the admin pages, curl, Postman). Accepted by
@@ -36,12 +36,14 @@ Serves the static `index.html`. No auth, no response body documented here.
 
 ---
 
-## `GET /leaderboard`, `GET /houses`
+## `GET /leaderboard`, `GET /houses`, `GET /difficulty`
 
-Serve the web leaderboard (`src/static/leaderboard.html`) and the house
-management page (`src/static/houses.html`), both linked from `/`. No auth -
-the pages hold no data; they ask for `ADMIN_SECRET` and use it to call the
-admin routes below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`).
+Serve the web leaderboard (`src/static/leaderboard.html`), the house
+management page (`src/static/houses.html`) and the puzzle difficulty page
+(`src/static/difficulty.html`), all linked from `/`. No auth - the pages hold
+no data; they ask for `ADMIN_SECRET` and use it to call the admin routes
+below (`/admin/leaderboard`; `/admin/houses`, `/admin/players`;
+`/admin/difficultyWeights`).
 The secret is kept in the tab's `sessionStorage`, shared
 by all the pages, so unlocking one unlocks the others. Shared page code lives in
 `src/static/admin.js` / `admin.css`.
@@ -51,7 +53,9 @@ by all the pages, so unlocking one unlocks the others. Shared page code lives in
 ## `POST /admin/dailyPuzzle:prepare`
 
 Fetches a random Lichess puzzle and queues it, so the send only reads the
-queue and posts to Slack. A no-op if anything is already queued, so it's safe
+queue and posts to Slack. Its difficulty is picked at random using the
+weights from `PUT /admin/difficultyWeights`, and stored with the puzzle's
+Lichess rating to show on the Slack post. A no-op if anything is already queued, so it's safe
 to retrigger.
 
 The cron worker calls it right after `POST /admin/dailyPuzzle:send` to queue
@@ -445,6 +449,52 @@ house standings.
 ```
 curl -X DELETE "https://.../admin/players/U0123ABC/house" \
   -H "Authorization: Bearer $ADMIN_SECRET"
+```
+
+---
+
+## `GET /admin/difficultyWeights`
+
+How often each Lichess puzzle difficulty is picked when a new puzzle is
+fetched, as percentages. Lichess picks relative to a 1500 rating:
+`easiest` is about 900, `easier` 1200, `normal` 1500, `harder` 1800,
+`hardest` 2100.
+
+**Responses**
+
+- `200`: `{easiest, easier, normal, harder, hardest}`, each an integer
+  percentage. Seeded by the migration as `20, 50, 15, 10, 5`.
+- `401`: bad/missing bearer token
+
+```
+curl "https://.../admin/difficultyWeights" \
+  -H "Authorization: Bearer $ADMIN_SECRET"
+```
+
+---
+
+## `PUT /admin/difficultyWeights`
+
+Replaces the difficulty weights. Applies to the next puzzle fetched; one
+already queued keeps its difficulty.
+
+**Body**
+
+- `easiest`, `easier`, `normal`, `harder`, `hardest` (integers 0-100, all
+  required, adding up to 100). A `0` means that difficulty is never picked.
+
+**Responses**
+
+- `200`: the saved weights
+- `400`: a difficulty missing or unknown, a weight not an integer from 0 to
+  100, or weights not adding up to 100
+- `401`: bad/missing bearer token
+
+```
+curl -X PUT "https://.../admin/difficultyWeights" \
+  -H "Authorization: Bearer $ADMIN_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"easiest": 20, "easier": 50, "normal": 15, "harder": 10, "hardest": 5}'
 ```
 
 ---
