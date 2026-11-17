@@ -57,7 +57,8 @@ time.
 ### Attempts
 
 - Each puzzle allows two attempts.
-- A wrong first attempt is DMed as wrong, without the solution.
+- A wrong first attempt is DMed as wrong, without the solution or a link to
+  the puzzle on Lichess.
 - The solution is DMed after a correct answer or a second wrong one.
 - A correct second attempt earns half the solve points and no podium bonus.
 
