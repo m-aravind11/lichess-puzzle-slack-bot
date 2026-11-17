@@ -111,6 +111,45 @@ class SubmissionQueries:
 
     DEACTIVATE = "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1"
 
+    LIST_FOR_PUZZLE = """
+        SELECT user_id, moves, correct, podium_rank, submitted_at FROM submissions
+        WHERE puzzle_id = ? AND active = 1
+        ORDER BY submitted_at, id
+    """
+
+
+class RevealQueries:
+    EARLIER_FIRST_SOLVES_IN_MONTH = """
+        SELECT p.slack_ts, MIN(s.submitted_at) AS first_solved_at
+        FROM puzzles p JOIN submissions s ON s.puzzle_id = p.puzzle_id
+        WHERE p.active = 1 AND p.slack_ts IS NOT NULL
+          AND substr(p.posted_at, 1, 7) = substr(:posted_at, 1, 7) AND p.posted_at < :posted_at
+          AND s.active = 1 AND s.correct = 1
+        GROUP BY p.puzzle_id
+    """
+
+    # Runs that reached the puzzle just before this one, held by players who didn't solve this one.
+    BROKEN_STREAKS = """
+        WITH seq AS (
+            SELECT puzzle_id, ROW_NUMBER() OVER (ORDER BY posted_at, rowid) AS n
+            FROM puzzles WHERE posted_at IS NOT NULL AND active = 1
+        ),
+        target AS (SELECT n FROM seq WHERE puzzle_id = :puzzle_id),
+        wins AS (
+            SELECT s.user_id, seq.n,
+                   seq.n - ROW_NUMBER() OVER (PARTITION BY s.user_id ORDER BY seq.n) AS run
+            FROM submissions s JOIN seq ON seq.puzzle_id = s.puzzle_id
+            WHERE s.active = 1 AND s.correct = 1 AND seq.n < (SELECT n FROM target)
+        ),
+        runs AS (SELECT user_id, COUNT(*) AS len, MAX(n) AS last_n FROM wins GROUP BY user_id, run)
+        SELECT user_id, len AS streak FROM runs
+        WHERE last_n = (SELECT n FROM target) - 1 AND len >= :min_streak
+          AND user_id NOT IN (
+            SELECT user_id FROM submissions WHERE puzzle_id = :puzzle_id AND active = 1 AND correct = 1
+          )
+        ORDER BY len DESC, user_id
+    """
+
 
 class LeaderboardQueries:
     # A submission counts toward its puzzle's month, substr(posted_at, 1, 7), not

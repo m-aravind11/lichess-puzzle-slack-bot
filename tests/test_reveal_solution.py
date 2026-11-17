@@ -12,7 +12,12 @@ from constants import Security
 def client(monkeypatch):
     monkeypatch.setattr(Security, "CRON_SECRET", "s3cr3t")
     monkeypatch.setattr(app_module, "slack_client", MagicMock())
+    monkeypatch.setattr(db, "get_reveal_data", MagicMock(return_value=_reveal_data()))
     return TestClient(app_module.app)
+
+
+def _reveal_data(submissions=()) -> dict:
+    return {"submissions": list(submissions), "earlier_first_solves": [], "broken_streaks": []}
 
 
 def _puzzle(**overrides) -> dict:
@@ -53,6 +58,31 @@ def test_open_puzzle_is_closed_and_its_solution_posted_in_thread(client, monkeyp
     assert call.kwargs["reply_broadcast"] is True
     assert "Correct answer: `e4 Qh5`" in call.kwargs["text"]
     assert "Opponent: `e5`" in call.kwargs["text"]
+
+
+def test_reveal_includes_how_everyone_did(client, monkeypatch):
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value=_puzzle()))
+    monkeypatch.setattr(db, "get_reveal_data", MagicMock(return_value=_reveal_data([
+        {"user_id": "U1", "moves": "e4 Qh5", "correct": 1, "podium_rank": 1, "submitted_at": "2023-11-14T22:15:20+00:00"},
+    ])))
+
+    client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
+
+    assert db.get_reveal_data.call_args.args == (_puzzle(), 3)
+    text = app_module.slack_client.chat_postMessage.call_args.kwargs["text"]
+    assert "*How everyone did:* 1 of 1 solved it (100%).\n:checkered_flag: Only 1 of 5 podium spots taken." in text
+
+
+def test_stats_failure_still_reveals_the_solution(client, monkeypatch):
+    monkeypatch.setattr(db, "close_previous_puzzle", MagicMock(return_value=_puzzle()))
+    monkeypatch.setattr(db, "get_reveal_data", MagicMock(side_effect=RuntimeError("db down")))
+
+    response = client.post("/admin/puzzle:revealSolution", headers={"Authorization": "Bearer s3cr3t"})
+
+    assert response.status_code == 200
+    text = app_module.slack_client.chat_postMessage.call_args.kwargs["text"]
+    assert "Correct answer: `e4 Qh5`" in text
+    assert "How everyone did" not in text
 
 
 def test_close_previous_puzzle_is_called_with_todays_utc_date(client, monkeypatch):

@@ -121,6 +121,13 @@ class LichessDailyPuzzle:
         except ValueError:
             return board.parse_san(fallback)
 
+    def submitted_move_san(self, fen: str, token: str) -> str | None:
+        board = self.get_board_from_fen(fen)
+        try:
+            return board.san(self._parse_submitted_move(board, token))
+        except ValueError:
+            return None
+
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
         # san_solution alternates player move / opponent reply. Users submit only their
         # own moves; replies are replayed from the solution, since Lichess records just

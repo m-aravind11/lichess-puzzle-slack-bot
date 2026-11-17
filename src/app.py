@@ -16,6 +16,7 @@ import db
 from constants import Paths, PlayerHouseResult, PuzzleDifficulty, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
+from puzzle_stats import MIN_BROKEN_STREAK, build_puzzle_stats
 from slack_helpers import (
     format_all_time_leaderboard_post, format_leaderboard_post, format_seconds,
     format_solution_reveal,
@@ -194,10 +195,17 @@ def _reveal_previous_solution(date_str: str) -> None:
         logger.info("admin/puzzle:revealSolution: puzzle %s has no thread to post to", puzzle['puzzle_id'])
         return
 
+    # The puzzle is already closed, so a failure here must not block the reveal: a retry would no-op.
+    try:
+        stats = build_puzzle_stats(puzzle, db.get_reveal_data(puzzle, MIN_BROKEN_STREAK), lichess.submitted_move_san)
+    except Exception:
+        logger.exception("admin/puzzle:revealSolution: stats for %s failed, revealing without them", puzzle['puzzle_id'])
+        stats = None
+
     slack_client.chat_postMessage(
         channel=lichess.SLACK_CHANNEL_ID,
         thread_ts=puzzle['slack_ts'],
-        text=format_solution_reveal(puzzle),
+        text=format_solution_reveal(puzzle, stats),
         reply_broadcast=True,
     )
 
