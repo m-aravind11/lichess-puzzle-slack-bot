@@ -81,11 +81,53 @@ def format_result_dm(
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 
-def format_solution_reveal(puzzle: dict) -> str:
-    return (
-        f"*Solution to the above puzzle*\n{format_solution(puzzle['solution'])}\n"
-        "_PS: this puzzle is no longer accepting answers._"
-    )
+def _format_podium(podium: dict) -> str:
+    if podium["filled_seconds"] is not None:
+        return f":checkered_flag: Podium filled in {format_seconds(podium['filled_seconds'])}."
+    if podium["taken"] < podium["spots"]:
+        return f":checkered_flag: Only {podium['taken']} of {podium['spots']} podium spots taken."
+    return ":checkered_flag: Podium filled."
+
+
+def _format_broken_streaks(broken: dict) -> str:
+    tied = broken["longest_user_ids"]
+    plural = "s" if len(tied) > 1 else ""
+    possessives = [f"<@{user_id}>'s" for user_id in tied]
+    longest = f"{_join_names(possessives)} {broken['longest']}-day"
+    if broken["count"] == len(tied):
+        return f":broken_heart: Ended {longest} streak{plural}."
+    return f":broken_heart: Ended {broken['count']} streaks, including {longest} run{plural}."
+
+
+def format_puzzle_stats(stats: dict) -> str | None:
+    lines = []
+    if stats["players"]:
+        percent = round(100 * stats["solved"] / stats["players"])
+        lines.append(f"*How everyone did:* {stats['solved']} of {stats['players']} solved it ({percent}%).")
+    if stats["month_record"]:
+        record = stats["month_record"]
+        lines.append(f":zap: <@{record['user_id']}>'s {format_seconds(record['seconds'])} is the fastest solve this month.")
+    if stats["podium"]:
+        lines.append(_format_podium(stats["podium"]))
+    if stats["tempting_move"]:
+        move = stats["tempting_move"]
+        lines.append(f":dart: Most tempting wrong move: `{move['san']}` ({move['players']} players).")
+    if stats["so_close"]:
+        close = stats["so_close"]
+        who = "1 player" if close["players"] == 1 else f"{close['players']} players"
+        lines.append(f":sweat_smile: So close: {who} found `{close['san']}` but slipped on the follow-up.")
+    if stats["broken_streaks"]:
+        lines.append(_format_broken_streaks(stats["broken_streaks"]))
+    return "\n".join(lines) or None
+
+
+def format_solution_reveal(puzzle: dict, stats: dict | None = None) -> str:
+    sections = [
+        f"*Solution to the above puzzle*\n{format_solution(puzzle['solution'])}",
+        format_puzzle_stats(stats) if stats else None,
+        "_PS: this puzzle is no longer accepting answers._",
+    ]
+    return "\n".join(section for section in sections if section)
 
 
 def _format_table(columns: list, rows: list) -> str:

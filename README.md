@@ -13,8 +13,11 @@ Each person gets their result by DM, and a leaderboard keeps score.
 2. **People answer privately.** The button opens a popup where you type your
    moves. The bot checks them and DMs you the result. Correct solves get a
    shout-out in the thread.
-3. **The solution is revealed.** The next day the bot posts the solution,
-   followed by the leaderboard.
+3. **The solution is revealed.** The next day the bot posts the solution
+   with how everyone did: how many solved it, a new fastest solve of the
+   month, how quickly the podium filled, the most tempting wrong first move,
+   who found the first move but slipped after, and which streaks (3+) it
+   ended. Lines with nothing to say are left out. The leaderboard follows.
 
 ## Features
 

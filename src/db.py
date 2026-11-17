@@ -12,7 +12,9 @@ import turso_serverless
 
 import migrations
 from constants import PlayerHouseResult, PuzzleDifficulty, PuzzleResult, PuzzleState, SubmissionResult
-from queries import DifficultyQueries, HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, SubmissionQueries
+from queries import (
+    DifficultyQueries, HouseQueries, LeaderboardQueries, PlayerQueries, PuzzleQueries, RevealQueries, SubmissionQueries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +286,26 @@ def record_submission(puzzle_id: str, user_id: str, user_name: str, moves: str, 
             puzzle_id, user_id, attempt, correct, recorded_score, podium_rank,
         )
         return SubmissionOutcome(SubmissionResult.RECORDED, recorded_score, podium_rank, attempt)
+
+
+@_retry_stale_connection
+def get_reveal_data(puzzle: dict, min_broken_streak: int) -> dict:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(SubmissionQueries.LIST_FOR_PUZZLE, (puzzle["puzzle_id"],))
+        submissions = [_row_to_dict(cur, r) for r in cur.fetchall()]
+
+        cur.execute(RevealQueries.EARLIER_FIRST_SOLVES_IN_MONTH, {"posted_at": puzzle["posted_at"]})
+        earlier_first_solves = [_row_to_dict(cur, r) for r in cur.fetchall()]
+
+        cur.execute(RevealQueries.BROKEN_STREAKS, {"puzzle_id": puzzle["puzzle_id"], "min_streak": min_broken_streak})
+        broken_streaks = [_row_to_dict(cur, r) for r in cur.fetchall()]
+
+    return {
+        "submissions": submissions,
+        "earlier_first_solves": earlier_first_solves,
+        "broken_streaks": broken_streaks,
+    }
 
 
 @_retry_stale_connection
