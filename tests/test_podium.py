@@ -143,6 +143,20 @@ def test_result_dm_reveals_the_solution_once_attempts_run_out():
     assert "Correct answer: `Qh5`" in text
 
 
+def test_result_dm_withholds_the_lichess_link_while_an_attempt_is_left():
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qh5"]}
+    text = format_result_dm(puzzle, "e4", False, 0, attempts_left=1)
+    assert "lichess.org" not in text
+    assert "Puzzle - January 01, 2024" in text
+
+
+@pytest.mark.parametrize("correct, attempts_left", [(True, 1), (True, 0), (False, 0)])
+def test_result_dm_links_to_lichess_once_solved_or_out_of_attempts(correct, attempts_left):
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qh5"]}
+    text = format_result_dm(puzzle, "Qh5", correct, 10 if correct else 0, attempts_left=attempts_left)
+    assert "<https://lichess.org/training/p1|Puzzle - January 01, 2024>" in text
+
+
 def test_result_dm_shows_half_points_without_a_trailing_zero():
     puzzle = {"puzzle_id": "abc", "posted_at": "2026-10-01T11:30:00+00:00", "solution": ["e4"]}
     assert "+9.5 points" in format_result_dm(puzzle, "e4", True, 9.5)

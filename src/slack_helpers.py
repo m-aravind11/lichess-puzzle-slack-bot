@@ -59,7 +59,10 @@ def format_result_dm(
     puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None, attempts_left: int = 0
 ) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
-    puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>"
+    puzzle_link = f"Puzzle - {puzzle_date}"
+    # Lichess's puzzle page offers the solution, so withhold it while an attempt is left.
+    if correct or not attempts_left:
+        puzzle_link = f"<https://lichess.org/training/{puzzle['puzzle_id']}|{puzzle_link}>"
     if correct:
         result_text = f"Correct - nice work! +{format_points(score)} points"
     elif attempts_left:
