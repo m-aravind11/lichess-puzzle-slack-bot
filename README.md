@@ -76,11 +76,11 @@ good defences, the answer only has to beat one of them, the same way the
 stored solution assumes one reply.
 
 - A first attempt that's now correct earns the solve points it would have
-  earned at the time. If the second attempt was also correct, the first
-  attempt gets only the difference and stays marked wrong, so the puzzle
-  still counts as one solve.
+  earned at the time. If the second attempt was correct too, it's set to
+  wrong with 0 points, so the puzzle still counts as one solve. Otherwise
+  the second attempt is left as it is.
 - A second attempt that's now correct earns half, as usual.
-- Second attempts are never changed or removed.
+- No submission is removed.
 - Regraded answers count as solves, so streaks carry on, and the next
   leaderboard post adds any streak bonus they now reach.
 - **Known limitation:** podium ranks and bonuses aren't changed. A regraded

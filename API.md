@@ -357,8 +357,8 @@ curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
 
 Rechecks a puzzle's wrong answers and accepts the ones that force mate
 within the puzzle's move count against the best defence. It updates only
-`correct` and `score`. Podium ranks, podium bonuses and second attempts
-are left alone. The rules are under
+`correct` and `score`. Podium ranks and podium bonuses are left alone, and
+no submission is removed. The rules are under
 [Regrading alternative solutions](README.md#regrading-alternative-solutions).
 Safe to repeat: a second run finds nothing left to change.
 
