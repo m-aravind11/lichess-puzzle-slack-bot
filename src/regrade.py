@@ -97,29 +97,19 @@ def judge(lichess, puzzle: dict, tokens: list) -> Verdict:
     if lichess.check_answer(fen, solution, tokens):
         return Verdict(True, "matches the solution")
 
-    player_moves, replies = solution[0::2], solution[1::2]
+    move_count = len(solution[0::2])
     if not tokens:
         return Verdict(False, "no moves")
-    if len(tokens) > len(player_moves):
-        return Verdict(False, f"{len(tokens)} moves for a {len(player_moves)}-move puzzle")
+    if len(tokens) > move_count:
+        return Verdict(False, f"{len(tokens)} moves for a {move_count}-move puzzle")
 
+    # The recorded replies are just one of possibly several equally long defences,
+    # and a typed line only has to beat one of them, as the stored solution does.
     board = lichess.get_board_from_fen(fen)
-    for turn, token in enumerate(tokens):
-        try:
-            move = lichess._parse_submitted_move(board, token)
-        except ValueError:
-            return Verdict(False, f"{token} is illegal")
-        if move != board.parse_san(player_moves[turn]):
-            wins, failures = _play_out(lichess._parse_submitted_move, board, tokens[turn:])
-            # Equally long defences tie often and a typed line can follow only one,
-            # just as the stored solution follows its one recorded reply.
-            if wins:
-                return Verdict(True, f"mates against {wins} of {wins + len(failures)} best defences")
-            return Verdict(False, "; ".join(failures))
-        board.push(move)
-        if turn < len(replies):
-            board.push_san(replies[turn])
-    return Verdict(False, "stops before the end of the solution")
+    wins, failures = _play_out(lichess._parse_submitted_move, board, tokens)
+    if wins:
+        return Verdict(True, f"mates against {wins} of {wins + len(failures)} best defences")
+    return Verdict(False, "; ".join(failures))
 
 
 def _time_score(puzzle: dict, submitted_at: str) -> float:
@@ -154,13 +144,10 @@ def plan_regrade(lichess, puzzle: dict, submissions: list) -> list:
 
         first_verdict = verdict(first)
         if first_verdict.accepted:
-            full = _time_score(puzzle, first["submitted_at"])
+            changes.append(_change(first, correct=1, score=_time_score(puzzle, first["submitted_at"]), verdict=first_verdict))
             if second is not None and second["correct"]:
-                # The second attempt stays as it is, so the first carries only the top-up and
-                # stays incorrect, keeping the puzzle counted as one solve.
-                changes.append(_change(first, correct=0, score=full - second["score"], verdict=first_verdict))
-            else:
-                changes.append(_change(first, correct=1, score=full, verdict=first_verdict))
+                # Leaderboard and streak queries expect at most one correct row per puzzle.
+                changes.append(_change(second, correct=0, score=0, verdict=Verdict(False, "first attempt now correct")))
         elif second is not None and not second["correct"]:
             second_verdict = verdict(second)
             if second_verdict.accepted:

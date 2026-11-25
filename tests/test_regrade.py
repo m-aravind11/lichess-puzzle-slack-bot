@@ -46,6 +46,23 @@ def test_the_stored_solution_is_accepted():
     assert judge(lp, PUZZLE, ["Be7", "Rxc8"]).accepted
 
 
+# Stored line is Qxg6+ Kh8 Rh1+ Qh4 Rxh4#, but ...Qh7 blocks the check just as well.
+BLOCK_PUZZLE = {
+    "fen": "r4rk1/p3q3/1p2p1p1/3n4/3p4/2P3Q1/PP2NP2/2K3R1 w - - 0 23",
+    "solution": ["Qxg6+", "Kh8", "Rh1+", "Qh4", "Rxh4#"],
+}
+
+
+@pytest.mark.parametrize("moves", [["Qxg6+", "Rh1+", "Rxh7#"], ["qg6", "rh1", "qh7"], ["Qg6", "Rh1", "Rh4"]])
+def test_line_against_an_equally_good_reply_to_the_recorded_one_is_accepted(moves):
+    assert judge(lp, BLOCK_PUZZLE, moves).accepted
+
+
+@pytest.mark.parametrize("moves", [["Qxg6+", "Qxg7#"], ["Qg6", "Qg7"], ["Qxg6+", "Qxg7", "Rh1#"], ["Qg6", "Rh1", "Rg7"]])
+def test_line_that_needs_a_weaker_reply_is_rejected(moves):
+    assert not judge(lp, BLOCK_PUZZLE, moves).accepted
+
+
 @pytest.fixture
 def conn():
     connection = sqlite3.connect(":memory:", check_same_thread=False)
@@ -90,7 +107,7 @@ def rows(conn):
     }
 
 
-def test_regrade_updates_scores_without_touching_podiums_or_second_attempts(client, conn):
+def test_regrade_updates_scores_without_touching_podiums(client, conn):
     submit(conn, "SOLVER", "Be7 Rxc8", 1, 15, minutes=2, podium_rank=1)
     submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
     submit(conn, "ALT_THEN_SOLVED", "Bc5 Rxc8", 0, 0, minutes=6)
@@ -110,9 +127,8 @@ def test_regrade_updates_scores_without_touching_podiums_or_second_attempts(clie
     assert rows(conn) == {
         ("SOLVER", 1): (1, 15, 1, 1),
         ("ALT", 1): (1, 10, None, 1),
-        # Topped up to a first-attempt 10 overall, staying incorrect so the puzzle counts once.
-        ("ALT_THEN_SOLVED", 1): (0, 5.5, None, 1),
-        ("ALT_THEN_SOLVED", 2): (1, 4.5, None, 1),
+        ("ALT_THEN_SOLVED", 1): (1, 10, None, 1),
+        ("ALT_THEN_SOLVED", 2): (0, 0, None, 1),
         ("ALT_THEN_WRONG", 1): (1, 10, None, 1),
         ("ALT_THEN_WRONG", 2): (0, 0, None, 1),
         ("WRONG_THEN_ALT", 1): (0, 0, None, 1),
