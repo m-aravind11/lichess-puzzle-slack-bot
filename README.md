@@ -65,6 +65,32 @@ time.
 - The solution is DMed after a correct answer or a second wrong one.
 - A correct second attempt earns half the solve points and no podium bonus.
 
+### Regrading alternative solutions
+
+Answers are checked against the one Lichess solution, and a different move
+is only accepted live if it mates on the spot. An admin can regrade a puzzle
+with `POST /admin/puzzles/{puzzle_id}:regrade` (see [API.md](API.md)). This
+accepts any answer that still mates within the puzzle's move count when the
+opponent defends as well as possible. When the opponent has several equally
+good defences, the answer only has to beat one of them, the same way the
+stored solution assumes one reply.
+
+- A first attempt that's now correct earns the solve points it would have
+  earned at the time. If the second attempt was also correct, the first
+  attempt gets only the difference and stays marked wrong, so the puzzle
+  still counts as one solve.
+- A second attempt that's now correct earns half, as usual.
+- Second attempts are never changed or removed.
+- Regraded answers count as solves, so streaks carry on, and the next
+  leaderboard post adds any streak bonus they now reach.
+- **Known limitation:** podium ranks and bonuses aren't changed. A regraded
+  answer that would have made the podium gets no bonus, and nobody loses
+  theirs.
+- It's safe to run more than once, even while the puzzle is open. Answers
+  sent after a regrade are still checked the old way, so run it again after
+  the solution is revealed. A month whose final standings are already stored
+  doesn't pick up the change.
+
 ### Solve points
 
 Counted from when the puzzle is posted. A wrong answer scores 0.

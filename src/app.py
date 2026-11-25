@@ -17,6 +17,7 @@ from constants import Paths, PlayerHouseResult, PuzzleDifficulty, PuzzleState, S
 from daily_puzzle import LichessDailyPuzzle
 from interactions import handle_view_submission, open_answer_modal
 from puzzle_stats import MIN_BROKEN_STREAK, build_puzzle_stats
+from regrade import plan_regrade
 from slack_helpers import (
     format_all_time_leaderboard_post, format_leaderboard_post, format_seconds,
     format_solution_reveal,
@@ -169,6 +170,16 @@ async def reactivate_puzzle(puzzle_id: str):
     if result == db.PuzzleResult.ALREADY_ACTIVE:
         raise HTTPException(status_code=409, detail="Puzzle is already active")
     return Response(status_code=200)
+
+@app.post('/admin/puzzles/{puzzle_id}:regrade', dependencies=[Depends(require_admin_auth)])
+def regrade_puzzle(puzzle_id: str, dry_run: bool = Query(False, alias="dryRun")):
+    puzzle = db.get_puzzle(puzzle_id)
+    if puzzle is None:
+        raise HTTPException(status_code=404, detail="Puzzle not found")
+    changes = plan_regrade(lichess, puzzle, db.list_submissions_for_regrade(puzzle_id))
+    if changes and not dry_run:
+        db.regrade_submissions(changes)
+    return {"puzzleId": puzzle_id, "dryRun": dry_run, "changes": changes}
 
 @app.post('/webhooks/slack')
 async def slack_interactions(request: Request):

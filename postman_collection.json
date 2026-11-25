@@ -58,6 +58,19 @@
               "path": ["admin", "puzzles", "{{puzzleId}}:reactivate"]
             }
           }
+        },
+        {
+          "name": "Regrade puzzle",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/admin/puzzles/{{puzzleId}}:regrade?dryRun=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "puzzles", "{{puzzleId}}:regrade"],
+              "query": [{"key": "dryRun", "value": "true"}]
+            },
+            "description": "Accepts wrong answers that still force mate against the best defence. Set dryRun=false to write."
+          }
         }
       ]
     },
