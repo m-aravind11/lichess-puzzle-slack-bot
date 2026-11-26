@@ -11,6 +11,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 import db
+from alternative_mates import forces_mate
 from constants import SlackActions
 
 logger = logging.getLogger(__name__)
@@ -129,6 +130,29 @@ class LichessDailyPuzzle:
             return None
 
     def check_answer(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
+        if self._follows_solution(fen, san_solution, submitted_moves):
+            return True
+        return 0 < len(submitted_moves) <= len(san_solution[0::2]) and forces_mate(
+            self._parse_submitted_move, self.get_board_from_fen(fen), submitted_moves,
+        )
+
+    def matches_solution(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
+        player_moves = san_solution[0::2]
+        if len(submitted_moves) != len(player_moves):
+            return False
+        board = self.get_board_from_fen(fen)
+        try:
+            for turn, token in enumerate(submitted_moves):
+                if self._parse_submitted_move(board, token) != board.parse_san(player_moves[turn]):
+                    return False
+                board.push_san(player_moves[turn])
+                if 2 * turn + 1 < len(san_solution):
+                    board.push_san(san_solution[2 * turn + 1])
+        except ValueError:
+            return False
+        return True
+
+    def _follows_solution(self, fen: str, san_solution: list, submitted_moves: list) -> bool:
         # san_solution alternates player move / opponent reply. Users submit only their
         # own moves; replies are replayed from the solution, since Lichess records just
         # one of possibly several valid replies.

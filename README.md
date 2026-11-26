@@ -65,33 +65,15 @@ time.
 - The solution is DMed after a correct answer or a second wrong one.
 - A correct second attempt earns half the solve points and no podium bonus.
 
-### Accepting alternative mates
+### Alternative mates
 
-Answers are checked against the one Lichess solution, and a different move
-is only accepted live if it mates on the spot. An admin can then run
-`POST /admin/puzzles/{puzzle_id}:acceptAlternativeMates` (see [API.md](API.md)),
-which accepts any answer that still mates within the puzzle's move count when the
-opponent defends as well as possible. When the opponent has several equally
-good defences, the answer only has to beat one of them, the same way the
-stored solution assumes one reply.
+An answer doesn't have to match the Lichess solution. Any line that mates
+within the puzzle's move count, when the opponent defends as well as
+possible, is correct too.
 
-- A first attempt that's now correct earns the solve points it would have
-  earned at the time. If the second attempt was correct too, it's set to
-  wrong with 0 points, so the puzzle still counts as one solve. Otherwise
-  the second attempt is left as it is.
-- A second attempt that's now correct earns half, as usual.
-- No submission is removed.
-- Each player whose answer is now correct gets a DM saying it counts.
-  One post in the puzzle's thread lists them all with their solve times.
-- Newly accepted answers count as solves, so streaks carry on, and the next
-  leaderboard post adds any streak bonus they now reach.
-- **Known limitation:** podium ranks and bonuses aren't changed. A newly
-  accepted answer that would have made the podium gets no bonus, and nobody loses
-  theirs.
-- It's safe to run more than once, even while the puzzle is open. Answers
-  sent after a run are still checked the old way, so run it again after
-  the solution is revealed. A month whose final standings are already stored
-  doesn't pick up the change.
+- When the opponent has several equally good defences, the answer only has
+  to beat one of them, the same way the stored solution assumes one reply.
+- Type the moves as usual, without the opponent's replies.
 
 ### Solve points
 

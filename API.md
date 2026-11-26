@@ -353,40 +353,6 @@ curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
 
 ---
 
-## `POST /admin/puzzles/{puzzle_id}:acceptAlternativeMates`
-
-Rechecks a puzzle's wrong answers and accepts the ones that force mate
-within the puzzle's move count against the best defence. It updates only
-`correct` and `score`. Podium ranks and podium bonuses are left alone, and
-no submission is removed. The rules are under
-[Accepting alternative mates](README.md#accepting-alternative-mates).
-Each newly correct player gets a DM, and one post in the puzzle's thread lists
-them all. A dry run sends nothing. Safe to repeat: a second run finds
-nothing left to change, so nobody is messaged twice.
-
-**Path params**
-
-- `puzzle_id` (string, required)
-
-**Query params**
-
-- `dryRun` (bool, default `false`): report the changes without writing them
-
-**Responses**
-
-- `200`: `{"puzzleId", "dryRun", "changes": [...]}`, one entry per updated
-  submission: `submissionId`, `userId`, `userName`, `attempt`, `moves`,
-  `reason`, `oldCorrect`, `oldScore`, `correct`, `score`
-- `401`: bad/missing bearer token
-- `404`: no active, posted puzzle with that id
-
-```
-curl -X POST "https://.../admin/puzzles/abc123:acceptAlternativeMates?dryRun=true" \
-  -H "Authorization: Bearer $ADMIN_SECRET"
-```
-
----
-
 ## `GET /admin/houses`
 
 Lists houses, alphabetically.

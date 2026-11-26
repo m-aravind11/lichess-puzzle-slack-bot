@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi import Response
 
 import db
@@ -175,3 +176,19 @@ def test_podium_finish_is_announced_in_thread_with_bonus_included(monkeypatch):
     dm_call, thread_call = slack_client.chat_postMessage.call_args_list
     assert "+15 points" in dm_call.kwargs["text"]
     assert "(+15 pts)! :first_place_medal:" in thread_call.kwargs["text"]
+
+
+@pytest.mark.parametrize("matches_solution, mentioned", [(False, True), (True, False)])
+def test_correct_answer_off_the_lichess_line_is_pointed_out_in_the_dm(monkeypatch, matches_solution, mentioned):
+    monkeypatch.setattr(db, "get_puzzle", lambda puzzle_id: _puzzle())
+    monkeypatch.setattr(db, "record_submission", MagicMock(return_value=db.SubmissionOutcome(db.SubmissionResult.RECORDED, 7)))
+    monkeypatch.setattr(interactions, "compute_score", lambda correct, elapsed: 7)
+
+    lichess = MagicMock()
+    lichess.check_answer.return_value = True
+    lichess.matches_solution.return_value = matches_solution
+    slack_client = _slack_client()
+
+    interactions.handle_view_submission(slack_client, lichess, _payload("e4"))
+
+    assert ("different mate" in slack_client.chat_postMessage.call_args.kwargs["text"]) is mentioned
