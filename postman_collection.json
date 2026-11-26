@@ -58,19 +58,6 @@
               "path": ["admin", "puzzles", "{{puzzleId}}:reactivate"]
             }
           }
-        },
-        {
-          "name": "Accept alternative mates",
-          "request": {
-            "method": "POST",
-            "url": {
-              "raw": "{{baseUrl}}/admin/puzzles/{{puzzleId}}:acceptAlternativeMates?dryRun=true",
-              "host": ["{{baseUrl}}"],
-              "path": ["admin", "puzzles", "{{puzzleId}}:acceptAlternativeMates"],
-              "query": [{"key": "dryRun", "value": "true"}]
-            },
-            "description": "Accepts wrong answers that still force mate against the best defence. Set dryRun=false to write."
-          }
         }
       ]
     },

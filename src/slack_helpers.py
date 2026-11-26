@@ -81,26 +81,6 @@ def format_result_dm(
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 
-def format_alternative_mate_dm(puzzle: dict, submitted_text: str, score: float) -> str:
-    puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
-    return (
-        f"<https://lichess.org/training/{puzzle['puzzle_id']}|Puzzle - {puzzle_date}>\n"
-        f"Your answer: `{submitted_text}`\n"
-        ":tada: Good news: your line is another forced mate, so we've counted it as correct. "
-        f"+{format_points(score)} points"
-    )
-
-
-def format_alternative_mates_announcement(solves: list) -> str:
-    """`solves` holds (user_id, solve_seconds, score) tuples, in the order to list them."""
-    lines = [":tada: *Another way to mate!* These players found a different forced mate, and their answers now count:"]
-    lines += [
-        f"• <@{user_id}> solved it in {format_seconds(seconds)} (+{format_points(score)} pts)"
-        for user_id, seconds, score in solves
-    ]
-    return "\n".join(lines)
-
-
 def _format_podium(podium: dict) -> str:
     if podium["filled_seconds"] is not None:
         return f":checkered_flag: Podium filled in {format_seconds(podium['filled_seconds'])}."

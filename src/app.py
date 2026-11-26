@@ -15,9 +15,8 @@ from slack_sdk import WebClient
 import db
 from constants import Paths, PlayerHouseResult, PuzzleDifficulty, PuzzleState, Security, SlackActions
 from daily_puzzle import LichessDailyPuzzle
-from interactions import announce_alternative_mates, handle_view_submission, open_answer_modal
+from interactions import handle_view_submission, open_answer_modal
 from puzzle_stats import MIN_BROKEN_STREAK, build_puzzle_stats
-from alternative_mates import plan_alternative_mates
 from slack_helpers import (
     format_all_time_leaderboard_post, format_leaderboard_post, format_seconds,
     format_solution_reveal,
@@ -170,17 +169,6 @@ async def reactivate_puzzle(puzzle_id: str):
     if result == db.PuzzleResult.ALREADY_ACTIVE:
         raise HTTPException(status_code=409, detail="Puzzle is already active")
     return Response(status_code=200)
-
-@app.post('/admin/puzzles/{puzzle_id}:acceptAlternativeMates', dependencies=[Depends(require_admin_auth)])
-def accept_alternative_mates(puzzle_id: str, dry_run: bool = Query(False, alias="dryRun")):
-    puzzle = db.get_puzzle(puzzle_id)
-    if puzzle is None:
-        raise HTTPException(status_code=404, detail="Puzzle not found")
-    changes = plan_alternative_mates(lichess, puzzle, db.list_answers_for_puzzle(puzzle_id))
-    if changes and not dry_run:
-        db.update_submission_results(changes)
-        announce_alternative_mates(slack_client, lichess.SLACK_CHANNEL_ID, puzzle, changes)
-    return {"puzzleId": puzzle_id, "dryRun": dry_run, "changes": changes}
 
 @app.post('/webhooks/slack')
 async def slack_interactions(request: Request):

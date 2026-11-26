@@ -4,16 +4,12 @@ from datetime import datetime, timezone
 
 from fastapi import Response
 from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 
 import db
 from constants import SlackActions, Validation
 from daily_puzzle import LichessDailyPuzzle
-from alternative_mates import solve_seconds
 from scoring import MAX_ATTEMPTS, compute_score
-from slack_helpers import (
-    dm, podium_medal, format_points, format_alternative_mates_announcement, format_alternative_mate_dm, format_result_dm, format_seconds,
-)
+from slack_helpers import dm, podium_medal, format_points, format_result_dm, format_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -116,21 +112,3 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
         log_timing("thread announcement")
 
     return Response(status_code=200)
-
-
-def announce_alternative_mates(slack_client: WebClient, channel_id: str, puzzle: dict, changes: list) -> None:
-    solves = sorted((c for c in changes if c["correct"]), key=lambda c: c["submittedAt"])
-    for change in solves:
-        dm(slack_client, change["userId"], format_alternative_mate_dm(puzzle, change["moves"], change["score"]))
-    if not solves or not puzzle["slack_ts"]:
-        return
-    try:
-        slack_client.chat_postMessage(
-            channel=channel_id,
-            thread_ts=puzzle["slack_ts"],
-            text=format_alternative_mates_announcement(
-                [(c["userId"], solve_seconds(puzzle, c["submittedAt"]), c["score"]) for c in solves]
-            ),
-        )
-    except SlackApiError as e:
-        logger.error("Alternative mates announcement for %s failed: %s", puzzle["puzzle_id"], e.response["error"])
