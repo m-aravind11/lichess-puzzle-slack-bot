@@ -111,13 +111,13 @@ class SubmissionQueries:
 
     DEACTIVATE = "UPDATE submissions SET active = 0 WHERE id = ? AND active = 1"
 
-    LIST_FOR_REGRADE = """
+    LIST_ANSWERS = """
         SELECT id, user_id, user_name, moves, correct, score, attempt, submitted_at FROM submissions
         WHERE puzzle_id = ? AND active = 1
         ORDER BY submitted_at, id
     """
 
-    REGRADE = "UPDATE submissions SET correct = ?, score = ? WHERE id = ? AND active = 1"
+    UPDATE_RESULT = "UPDATE submissions SET correct = ?, score = ? WHERE id = ? AND active = 1"
 
     LIST_FOR_PUZZLE = """
         SELECT user_id, moves, correct, podium_rank, submitted_at FROM submissions

@@ -353,14 +353,16 @@ curl -X POST "https://.../admin/puzzles/abc123:reactivate" \
 
 ---
 
-## `POST /admin/puzzles/{puzzle_id}:regrade`
+## `POST /admin/puzzles/{puzzle_id}:acceptAlternativeMates`
 
 Rechecks a puzzle's wrong answers and accepts the ones that force mate
 within the puzzle's move count against the best defence. It updates only
 `correct` and `score`. Podium ranks and podium bonuses are left alone, and
 no submission is removed. The rules are under
-[Regrading alternative solutions](README.md#regrading-alternative-solutions).
-Safe to repeat: a second run finds nothing left to change.
+[Accepting alternative mates](README.md#accepting-alternative-mates).
+Each newly correct player gets a DM, and one post in the puzzle's thread lists
+them all. A dry run sends nothing. Safe to repeat: a second run finds
+nothing left to change, so nobody is messaged twice.
 
 **Path params**
 
@@ -379,7 +381,7 @@ Safe to repeat: a second run finds nothing left to change.
 - `404`: no active, posted puzzle with that id
 
 ```
-curl -X POST "https://.../admin/puzzles/abc123:regrade?dryRun=true" \
+curl -X POST "https://.../admin/puzzles/abc123:acceptAlternativeMates?dryRun=true" \
   -H "Authorization: Bearer $ADMIN_SECRET"
 ```
 

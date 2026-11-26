@@ -1,5 +1,6 @@
 import sqlite3
 from contextlib import contextmanager
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ import migrations
 from constants import Security
 from daily_puzzle import LichessDailyPuzzle
 from queries import LeaderboardQueries
-from regrade import judge
+from alternative_mates import judge
 
 AUTH = {"Authorization": "Bearer s3cr3t"}
 POSTED_TS = 1704110400  # 2024-01-01T12:00:00Z
@@ -77,7 +78,7 @@ def conn():
 
 
 @pytest.fixture
-def client(conn, monkeypatch):
+def client(conn, monkeypatch, slack):
     @contextmanager
     def fake_get_connection():
         yield conn
@@ -86,7 +87,27 @@ def client(conn, monkeypatch):
     monkeypatch.setattr(db, "get_connection", fake_get_connection)
     monkeypatch.setattr(db, "_puzzle_cache", {})
     monkeypatch.setattr(Security, "ADMIN_SECRET", "s3cr3t")
+    monkeypatch.setattr(app_module.lichess, "SLACK_CHANNEL_ID", "C1")
     return TestClient(app_module.app)
+
+
+@pytest.fixture
+def slack(monkeypatch):
+    client = MagicMock()
+    client.conversations_open.side_effect = lambda users: {"channel": {"id": f"D-{users[0]}"}}
+    monkeypatch.setattr(app_module, "slack_client", client)
+    return client
+
+
+def dms(slack):
+    return {
+        c.kwargs["channel"]: c.kwargs["text"]
+        for c in slack.chat_postMessage.call_args_list if c.kwargs["channel"].startswith("D-")
+    }
+
+
+def thread_posts(slack):
+    return [c.kwargs for c in slack.chat_postMessage.call_args_list if c.kwargs["channel"] == "C1"]
 
 
 def submit(conn, user_id, moves, correct, score, minutes, attempt=1, podium_rank=None):
@@ -107,7 +128,7 @@ def rows(conn):
     }
 
 
-def test_regrade_updates_scores_without_touching_podiums(client, conn):
+def test_updates_scores_without_touching_podiums(client, conn):
     submit(conn, "SOLVER", "Be7 Rxc8", 1, 15, minutes=2, podium_rank=1)
     submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
     submit(conn, "ALT_THEN_SOLVED", "Bc5 Rxc8", 0, 0, minutes=6)
@@ -118,7 +139,7 @@ def test_regrade_updates_scores_without_touching_podiums(client, conn):
     submit(conn, "WRONG_THEN_ALT", "Ba3 Rxc8", 0, 0, minutes=25, attempt=2)
     submit(conn, "WRONG", "Bxg7 Rxc8", 0, 0, minutes=4)
 
-    response = client.post("/admin/puzzles/p1:regrade", headers=AUTH)
+    response = client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
 
     assert response.status_code == 200
     assert {c["userId"] for c in response.json()["changes"]} == {
@@ -137,14 +158,14 @@ def test_regrade_updates_scores_without_touching_podiums(client, conn):
     }
 
 
-def test_regrade_is_idempotent(client, conn):
+def test_is_idempotent(client, conn):
     submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
     submit(conn, "ALT_THEN_SOLVED", "Bc5 Rxc8", 0, 0, minutes=6)
     submit(conn, "ALT_THEN_SOLVED", "Be7 Rxc8", 1, 4.5, minutes=25, attempt=2)
 
-    client.post("/admin/puzzles/p1:regrade", headers=AUTH)
+    client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
     after_first = rows(conn)
-    response = client.post("/admin/puzzles/p1:regrade", headers=AUTH)
+    response = client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
 
     assert response.json()["changes"] == []
     assert rows(conn) == after_first
@@ -153,24 +174,56 @@ def test_regrade_is_idempotent(client, conn):
 def test_dry_run_reports_changes_without_writing(client, conn):
     submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
 
-    response = client.post("/admin/puzzles/p1:regrade?dryRun=true", headers=AUTH)
+    response = client.post("/admin/puzzles/p1:acceptAlternativeMates?dryRun=true", headers=AUTH)
 
     assert [c["score"] for c in response.json()["changes"]] == [10]
     assert rows(conn) == {("ALT", 1): (0, 0, None, 1)}
 
 
-def test_regraded_solve_keeps_the_streak(client, conn):
+def test_accepted_solve_keeps_the_streak(client, conn):
     submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
 
-    client.post("/admin/puzzles/p1:regrade", headers=AUTH)
+    client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
 
     streaks = {row[0]: row[2] for row in conn.execute(LeaderboardQueries.STREAKS)}
     assert streaks == {"ALT": 1}
 
 
 def test_unknown_puzzle_is_404(client):
-    assert client.post("/admin/puzzles/nope:regrade", headers=AUTH).status_code == 404
+    assert client.post("/admin/puzzles/nope:acceptAlternativeMates", headers=AUTH).status_code == 404
 
 
-def test_regrade_requires_admin_auth(client):
-    assert client.post("/admin/puzzles/p1:regrade").status_code == 401
+def test_requires_admin_auth(client):
+    assert client.post("/admin/puzzles/p1:acceptAlternativeMates").status_code == 401
+
+
+def test_new_solvers_get_a_dm_and_one_thread_announcement(client, conn, slack):
+    submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
+    submit(conn, "ALT_THEN_SOLVED", "Bc5 Rxc8", 0, 0, minutes=6)
+    submit(conn, "ALT_THEN_SOLVED", "Be7 Rxc8", 1, 4.5, minutes=25, attempt=2)
+    submit(conn, "WRONG", "Bxg7 Rxc8", 0, 0, minutes=4)
+
+    client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
+
+    sent = dms(slack)
+    assert set(sent) == {"D-ALT", "D-ALT_THEN_SOLVED"}
+    assert "another forced mate" in sent["D-ALT"] and "+10 points" in sent["D-ALT"]
+    assert "+10 points" in sent["D-ALT_THEN_SOLVED"]
+    assert [(p["thread_ts"], p["text"]) for p in thread_posts(slack)] == [(
+        str(POSTED_TS),
+        ":tada: *Another way to mate!* These players found a different forced mate, and their answers now count:\n"
+        "• <@ALT> solved it in 5m 0s (+10 pts)\n"
+        "• <@ALT_THEN_SOLVED> solved it in 6m 0s (+10 pts)",
+    )]
+
+
+def test_dry_run_and_rerun_send_nothing(client, conn, slack):
+    submit(conn, "ALT", "Bd6 Rxc8", 0, 0, minutes=5)
+
+    client.post("/admin/puzzles/p1:acceptAlternativeMates?dryRun=true", headers=AUTH)
+    assert not slack.chat_postMessage.called
+
+    client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
+    slack.reset_mock()
+    client.post("/admin/puzzles/p1:acceptAlternativeMates", headers=AUTH)
+    assert not slack.chat_postMessage.called
