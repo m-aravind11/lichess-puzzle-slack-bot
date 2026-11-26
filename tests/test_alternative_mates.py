@@ -46,6 +46,18 @@ def test_line_that_needs_a_weaker_reply_is_rejected(moves):
     assert not lp.check_answer(BLOCK_FEN, BLOCK_SOLUTION, moves)
 
 
+@pytest.mark.parametrize("moves, expected", [
+    (["Qxg6+", "Rh1+", "Rxh4#"], True),
+    (["qg6", "rh1", "rh4"], True),
+    (["Qxg6+", "Rh1+", "Rxh7#"], False),
+    (["Qxg6+", "Rh1+"], False),
+    (["Qxg6+", "Rh1+", "Rxh4#", "Kb1"], False),
+    (["Qh5", "Rh1", "Rxh4"], False),
+])
+def test_matches_solution_is_only_the_exact_lichess_line(moves, expected):
+    assert lp.matches_solution(BLOCK_FEN, BLOCK_SOLUTION, moves) is expected
+
+
 def _real_puzzles() -> list:
     # Lichess publishes only puzzles whose winning first move is unique, checked with Stockfish.
     with open(Path(__file__).parent / "data" / "mate_puzzles.csv") as f:

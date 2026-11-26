@@ -56,7 +56,8 @@ def format_month(month: str) -> str:
 
 
 def format_result_dm(
-    puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None, attempts_left: int = 0
+    puzzle: dict, submitted_text: str, correct: bool, score: float, podium_rank: int | None = None, attempts_left: int = 0,
+    alternative: bool = False,
 ) -> str:
     puzzle_date = datetime.strptime(puzzle['posted_at'][:10], '%Y-%m-%d').strftime('%B %d, %Y')
     puzzle_link = f"Puzzle - {puzzle_date}"
@@ -78,6 +79,11 @@ def format_result_dm(
         )
     if podium_rank:
         result_text += f"\n{podium_medal(podium_rank)} (+{PODIUM_BONUS[podium_rank - 1]} podium bonus)"
+    if correct and alternative:
+        result_text += (
+            f"\n:bulb: You found a different mate from Lichess's line (`{' '.join(puzzle['solution'][0::2])}`), "
+            "and it works too!"
+        )
     return f"{puzzle_link}\nYour answer: `{submitted_text}`\n{result_text}"
 
 

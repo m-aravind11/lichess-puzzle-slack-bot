@@ -74,6 +74,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
         return {"response_action": "errors", "errors": {SlackActions.MOVES_BLOCK_ID: "That puzzle isn't available anymore."}}
 
     correct = lichess.check_answer(puzzle['fen'], puzzle['solution'], san_moves)
+    alternative = correct and not lichess.matches_solution(puzzle['fen'], puzzle['solution'], san_moves)
     log_timing("check_answer")
 
     elapsed_seconds = None
@@ -97,7 +98,7 @@ def handle_view_submission(slack_client: WebClient, lichess: LichessDailyPuzzle,
             "errors": {SlackActions.MOVES_BLOCK_ID: "You've already solved this one or used up all your attempts - see you at the next puzzle!"},
         }
 
-    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, recorded_score, podium_rank, MAX_ATTEMPTS - attempt))
+    dm(slack_client, user_id, format_result_dm(puzzle, text, correct, recorded_score, podium_rank, MAX_ATTEMPTS - attempt, alternative))
     log_timing("dm")
 
     if correct and puzzle['slack_ts']:

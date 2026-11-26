@@ -161,3 +161,15 @@ def test_result_dm_shows_half_points_without_a_trailing_zero():
     puzzle = {"puzzle_id": "abc", "posted_at": "2026-10-01T11:30:00+00:00", "solution": ["e4"]}
     assert "+9.5 points" in format_result_dm(puzzle, "e4", True, 9.5)
     assert "+15 points" in format_result_dm(puzzle, "e4", True, 15.0)
+
+
+def test_result_dm_points_out_a_different_mate_with_the_lichess_line():
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qxg6+", "Kh8", "Rh1+", "Qh4", "Rxh4#"]}
+    text = format_result_dm(puzzle, "Qxg6 Rh1 Rxh7", True, 10, alternative=True)
+    assert "You found a different mate from Lichess's line (`Qxg6+ Rh1+ Rxh4#`), and it works too!" in text
+
+
+@pytest.mark.parametrize("correct, alternative", [(True, False), (False, True)])
+def test_result_dm_only_mentions_a_different_mate_when_it_was_accepted_as_one(correct, alternative):
+    puzzle = {"puzzle_id": "p1", "posted_at": "2024-01-01T09:00:00+00:00", "solution": ["Qh5"]}
+    assert "different mate" not in format_result_dm(puzzle, "Qh5", correct, 10 if correct else 0, alternative=alternative)
