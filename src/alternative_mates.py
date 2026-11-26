@@ -112,17 +112,21 @@ def judge(lichess, puzzle: dict, tokens: list) -> Verdict:
     return Verdict(False, "; ".join(failures))
 
 
-def _time_score(puzzle: dict, submitted_at: str) -> float:
+def solve_seconds(puzzle: dict, submitted_at: str) -> float | None:
     if not puzzle.get("slack_ts"):
-        return compute_score(True, None)
+        return None
     posted = datetime.fromtimestamp(float(puzzle["slack_ts"]), tz=timezone.utc)
     submitted = datetime.fromisoformat(submitted_at)
     if submitted.tzinfo is None:
         submitted = submitted.replace(tzinfo=timezone.utc)
-    return compute_score(True, (submitted - posted).total_seconds())
+    return (submitted - posted).total_seconds()
 
 
-def plan_regrade(lichess, puzzle: dict, submissions: list) -> list:
+def _time_score(puzzle: dict, submitted_at: str) -> float:
+    return compute_score(True, solve_seconds(puzzle, submitted_at))
+
+
+def plan_alternative_mates(lichess, puzzle: dict, submissions: list) -> list:
     """Changes to apply, as dicts holding the submission and its new correct/score."""
     verdicts: dict = {}
 
@@ -164,6 +168,7 @@ def _change(row: dict, correct: int, score: float, verdict: Verdict) -> dict:
         "userName": row["user_name"],
         "attempt": row["attempt"],
         "moves": row["moves"],
+        "submittedAt": row["submitted_at"],
         "reason": verdict.reason,
         "oldCorrect": row["correct"],
         "oldScore": row["score"],

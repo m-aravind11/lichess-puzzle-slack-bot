@@ -309,20 +309,20 @@ def get_reveal_data(puzzle: dict, min_broken_streak: int) -> dict:
 
 
 @_retry_stale_connection
-def list_submissions_for_regrade(puzzle_id: str) -> list:
+def list_answers_for_puzzle(puzzle_id: str) -> list:
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute(SubmissionQueries.LIST_FOR_REGRADE, (puzzle_id,))
+        cur.execute(SubmissionQueries.LIST_ANSWERS, (puzzle_id,))
         return [_row_to_dict(cur, row) for row in cur.fetchall()]
 
 
 @_retry_stale_connection
-def regrade_submissions(changes: list) -> None:
+def update_submission_results(changes: list) -> None:
     with get_connection() as conn:
         cur = conn.cursor()
         for change in changes:
-            cur.execute(SubmissionQueries.REGRADE, (change["correct"], change["score"], change["submissionId"]))
-    logger.info("regrade_submissions: updated %s", [c["submissionId"] for c in changes])
+            cur.execute(SubmissionQueries.UPDATE_RESULT, (change["correct"], change["score"], change["submissionId"]))
+    logger.info("update_submission_results: updated %s", [c["submissionId"] for c in changes])
 
 
 @_retry_stale_connection
